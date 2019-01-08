@@ -10,6 +10,8 @@ from tensorflow.distributions import Categorical, Normal
 
 from utils.logx import EpochLogger
 from utils.snake_wrapper import *
+from utils.mpi_tf import MpiAdamOptimizer, sync_all_params
+from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
 
 
 class PPOBuffer:
@@ -88,8 +90,9 @@ class PPOBuffer:
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
         # adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        adv_mean = np.mean(self.adv_buf)
-        adv_std = np.std(self.adv_buf)
+        # adv_mean = np.mean(self.adv_buf)
+        # adv_std = np.std(self.adv_buf)
+        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf
 
@@ -189,8 +192,8 @@ class PPOAgent(object):
         self.pi_loss = -tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv))
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
-        self.train_pi = tf.train.AdamOptimizer(pi_lr).minimize(self.pi_loss)
-        self.train_v = tf.train.AdamOptimizer(v_lr).minimize(self.v_loss)
+        self.train_pi = MpiAdamOptimizer(learning_rate=pi_lr).minimize(self.pi_loss)
+        self.train_v = MpiAdamOptimizer(learning_rate=v_lr).minimize(self.v_loss)
 
         self.pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='pi')
         self.old_pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='old_pi')
@@ -202,6 +205,7 @@ class PPOAgent(object):
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
+        self.sess.run(sync_all_params())
         self.sync_old_pi_params()
 
     def _create_placeholders(self):
@@ -283,7 +287,7 @@ class PPORunner(object):
         tf.logging.info(f'\t train_v_iters: {train_v_iters}')
         tf.logging.info(f'\t train_pi_iters: {train_pi_iters}')
         self.epochs = epochs
-        self.train_epoch_len = train_epoch_len
+        self.train_epoch_len = int(train_epoch_len / num_procs())
         self.dtarg = dtarg
         self.train_pi_iters = train_pi_iters
         self.train_v_iters = train_v_iters
@@ -292,6 +296,7 @@ class PPORunner(object):
         self.env = create_atari_env(env)
         # self.env = gym.make(env)
 
+        seed += 1000 * proc_id()
         tf.set_random_seed(seed)
         np.random.seed(seed)
         self.env.seed(seed)
@@ -301,7 +306,7 @@ class PPORunner(object):
         obs_dim = self.env.observation_space.shape[0]
         act_space = self.env.action_space
         self.agent = PPOAgent(obs_dim, act_space)
-        self.buffer = PPOBuffer(obs_dim, act_space, train_epoch_len, gamma, lam)
+        self.buffer = PPOBuffer(obs_dim, act_space, self.train_epoch_len, gamma, lam)
 
     def _collect_trajectories(self, epoch_len, logger):
         obs = self.env.reset()
@@ -340,6 +345,7 @@ class PPORunner(object):
 
         for i in range(self.train_pi_iters):
             kl, entropy = self.agent.get_kl(feed_dict)
+            kl = mpi_avg(kl)
             logger.store(KL=kl, Entropy=entropy)
             if kl > 1.5 * self.dtarg:
                 logger.log(f'Early stopping at step {i} due to reaching max kl.')
@@ -373,9 +379,12 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='snake-v0')
-    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--cpu', '-c', type=int, default=2)
     parser.add_argument('--exp_name', type=str, default='ppo')
     args = parser.parse_args()
+
+    mpi_fork(args.cpu)
 
     tf.logging.set_verbosity(tf.logging.INFO)
     output_dir = "./data/ppo/seed{}".format(args.seed)
