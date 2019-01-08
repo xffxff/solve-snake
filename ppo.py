@@ -21,8 +21,9 @@ class PPOBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, obs_dim, action_space, size, gamma, lam):
-        self.obs_buf = np.zeros((size, obs_dim), dtype=np.float32)
+    def __init__(self, obs_space, action_space, size, gamma, lam):
+        img_h, img_w, img_c = obs_space.shape
+        self.obs_buf = np.zeros((size, img_h, img_w, img_c), dtype=np.float32)
         self.act_buf = np.zeros(size, dtype=np.int32)
         self.val_buf = np.zeros(size, dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
@@ -102,7 +103,7 @@ class PPONet(object):
     def __init__(self,
                  obs,
                  act_space,
-                 hidden_sizes=(256, 128, 64),
+                 hidden_sizes=(64,),
                  activation=tf.nn.tanh,
                  output_activation=None):
         """Initialize the Network.
@@ -117,19 +118,36 @@ class PPONet(object):
         tf.logging.info(f'\t hidden_sizes: {hidden_sizes}')
         tf.logging.info(f'\t activation: {activation}')
         tf.logging.info(f'\t output_activation: {output_activation}')
+        # with tf.variable_scope('v'):
+        #     self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
+        # with tf.variable_scope('pi'):
+        #     logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+        #     self.dist = self._categorical_policy(logits)
+        # with tf.variable_scope('old_pi'):
+        #     logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+        #     self.old_dist = self._categorical_policy(logits)
+
         with tf.variable_scope('v'):
-            self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
+            net = self._conv(obs)
+            self.v = tf.squeeze(self._mlp(net, list(hidden_sizes)+[1], activation, output_activation), axis=1)
         with tf.variable_scope('pi'):
-            logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+            net = self._conv(obs)
+            logits = self._mlp(net, list(hidden_sizes)+[act_space.n], activation, None)
             self.dist = self._categorical_policy(logits)
         with tf.variable_scope('old_pi'):
-            logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+            net = self._conv(obs)
+            logits = self._mlp(net, list(hidden_sizes)+[act_space.n], activation, None)
             self.old_dist = self._categorical_policy(logits)
     
     def _mlp(self, x, hidden_sizes, activation, output_activation):
         for h in hidden_sizes[:-1]:
             x = tf.layers.dense(x, h, activation)
         return tf.layers.dense(x, hidden_sizes[-1], output_activation)
+
+    def _conv(self, x):
+        x = tf.layers.conv2d(x, filters=10, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        x = tf.layers.conv2d(x, filters=5, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        return tf.layers.flatten(x)
 
     def _categorical_policy(self, logits):
         """Categorical policy for discrete actions
@@ -158,7 +176,7 @@ class PPONet(object):
 class PPOAgent(object):
 
     def __init__(self,
-                 obs_dim,
+                 obs_space,
                  act_space,
                  clip_ratio=0.2,
                  pi_lr=0.001,
@@ -172,12 +190,12 @@ class PPOAgent(object):
             pi_lr: float, Learning rate for Pi-networks.
             v_lr: float, Learning rate for V-networks.
         """
-        tf.logging.info(f'\t obs_dim: {obs_dim}')
+        tf.logging.info(f'\t obs_space: {obs_space}')
         tf.logging.info(f'\t act_space: {act_space}')
         tf.logging.info(f'\t clip_ratio: {clip_ratio}')
         tf.logging.info(f'\t pi_lr: {pi_lr}')
         tf.logging.info(f'\t v_lr: {v_lr}')
-        self.obs_dim = obs_dim
+        self.obs_space = obs_space
         self.act_space = act_space
 
         self.obs_ph, self.act_ph, self.adv_ph, self.ret_ph = self._create_placeholders()
@@ -209,7 +227,9 @@ class PPOAgent(object):
         self.sync_old_pi_params()
 
     def _create_placeholders(self):
-        obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
+        img_h, img_w, img_c = self.obs_space.shape
+        input_shape = (img_h, img_w, img_c)
+        obs_ph = tf.placeholder(tf.float32, shape=[None] + list(input_shape))
         act_ph = tf.placeholder(tf.int32, shape=(None, ))
         adv_ph = tf.placeholder(tf.float32, shape=(None, ))
         ret_ph = tf.placeholder(tf.float32, shape=(None, ))
@@ -244,7 +264,7 @@ def create_atari_env(env_name):
     env.unit_size = 2
     env.snake_size = 2
     env = ProcessFrame(env)
-    env = FlattenFrame(env)
+    # env = FlattenFrame(env)
     return env
 
 
@@ -253,7 +273,7 @@ class PPORunner(object):
     def __init__(self,
                  env, 
                  seed,
-                 epochs=50,
+                 epochs=500,
                  train_epoch_len=5000,
                  gamma=0.99,
                  lam=0.95,
@@ -301,12 +321,12 @@ class PPORunner(object):
         np.random.seed(seed)
         self.env.seed(seed)
 
-        self.max_traj = 10000 #self.env.spec.timestep_limit
+        self.max_traj = 1000 #self.env.spec.timestep_limit
 
-        obs_dim = self.env.observation_space.shape[0]
+        obs_space = self.env.observation_space
         act_space = self.env.action_space
-        self.agent = PPOAgent(obs_dim, act_space)
-        self.buffer = PPOBuffer(obs_dim, act_space, self.train_epoch_len, gamma, lam)
+        self.agent = PPOAgent(obs_space, act_space)
+        self.buffer = PPOBuffer(obs_space, act_space, self.train_epoch_len, gamma, lam)
 
     def _collect_trajectories(self, epoch_len, logger):
         obs = self.env.reset()
@@ -384,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', type=str, default='ppo')
     args = parser.parse_args()
 
-    mpi_fork(args.cpu)
+    # mpi_fork(args.cpu)
 
     tf.logging.set_verbosity(tf.logging.INFO)
     output_dir = "./data/ppo/seed{}".format(args.seed)
