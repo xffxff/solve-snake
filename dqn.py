@@ -25,7 +25,7 @@ class DQNNet(object):
         out = layers.conv2d(obs, filters=10, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
         out = layers.conv2d(out, filters=5, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
         out = layers.flatten(out)
-        out = layers.dense(out, units=512, activation=tf.nn.relu)
+        out = layers.dense(out, units=64, activation=tf.nn.relu)
         self.out = layers.dense(out, units=act_n, activation=None)
         
         # net = layers.dense(obs, units=256, activation=tf.nn.relu)
@@ -131,6 +131,7 @@ class DQNRunner(object):
                  buffer_size=int(1e6),
                  batch_size=32,
                  frame_stack=2,
+                 max_ep_len=1000,
                  output_dir=''
                  ):
         """Initialize the Runner object.
@@ -167,6 +168,7 @@ class DQNRunner(object):
         self.learning_freq = learning_freq
         self.target_update_freq = target_update_freq
         self.batch_size = batch_size
+        self.max_ep_len = max_ep_len
         self.output_dir = output_dir
 
         tf.set_random_seed(seed)
@@ -213,7 +215,7 @@ class DQNRunner(object):
         self.t += 1
         self.replay_buffer.store_effect(idx, act, rew, done)
         self.obs = next_obs
-        if done:
+        if done or self.ep_len == self.max_ep_len:
             logger.store(EpRet=self.ep_r, EpLen=self.ep_len)
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
