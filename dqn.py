@@ -15,24 +15,23 @@ def create_atari_env(env_name):
     env.unit_size = 2
     env.snake_size = 2
     env = ProcessFrame(env)
-    env = FlattenFrame(env)
+    # env = FlattenFrame(env)
     return env
 
 
 class DQNNet(object):
 
     def __init__(self, obs, act_n):
-        # out = layers.conv2d(obs, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        # out = layers.conv2d(out, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        # out = layers.conv2d(out, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
-        # out = layers.flatten(out)
-        # out = layers.dense(out, units=512, activation=tf.nn.relu)
-        # self.out = layers.dense(out, units=act_n, activation=None)
+        out = layers.conv2d(obs, filters=10, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        out = layers.conv2d(out, filters=5, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        out = layers.flatten(out)
+        out = layers.dense(out, units=512, activation=tf.nn.relu)
+        self.out = layers.dense(out, units=act_n, activation=None)
         
-        net = layers.dense(obs, units=256, activation=tf.nn.relu)
-        net = layers.dense(net, units=128, activation=tf.nn.relu)
-        net = layers.dense(net, units=64, activation=tf.nn.relu)
-        self.out = layers.dense(net, units=act_n)
+        # net = layers.dense(obs, units=256, activation=tf.nn.relu)
+        # net = layers.dense(net, units=128, activation=tf.nn.relu)
+        # net = layers.dense(net, units=64, activation=tf.nn.relu)
+        # self.out = layers.dense(net, units=act_n)
     
     def network_output(self):
         return self.out
@@ -85,14 +84,15 @@ class DQNAgent(object):
         self.sess.run(self.update_target_op)
 
     def _create_placeholders(self):
-        # img_h, img_w, img_c = self.obs_space.shape
-        # input_shape = (img_h, img_w, img_c * self.frame_stack)
-        obs_dim = self.obs_space.shape[0]
-        # self.obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
-        self.obs_ph = tf.placeholder(tf.uint8, [None,obs_dim])
+        img_h, img_w, img_c = self.obs_space.shape
+        input_shape = (img_h, img_w, img_c * self.frame_stack)
+        # obs_dim = self.obs_space.shape[0]
+        self.obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
+        # self.obs_ph = tf.placeholder(tf.uint8, [None,obs_dim])
         self.act_ph = tf.placeholder(tf.int32, [None])
         self.rew_ph = tf.placeholder(tf.float32, [None])
-        self.next_obs_ph = tf.placeholder(tf.uint8, [None, obs_dim])
+        # self.next_obs_ph = tf.placeholder(tf.uint8, [None, obs_dim])
+        self.next_obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
         self.done_ph = tf.placeholder(tf.float32, [None])
         self.lr_ph = tf.placeholder(tf.float32, None)
 
@@ -130,7 +130,7 @@ class DQNRunner(object):
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
-                 frame_stack=1,
+                 frame_stack=2,
                  output_dir=''
                  ):
         """Initialize the Runner object.
@@ -205,7 +205,8 @@ class DQNRunner(object):
         if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
-            act = self.agent.select_action(self.obs[None, :])
+            # act = self.agent.select_action(self.obs[None, :])
+            act = self.agent.select_action(self.replay_buffer.encode_recent_observation()[None, :])
         next_obs, rew, done, info = self.env.step(int(act))
         self.ep_len += 1
         self.ep_r += rew
