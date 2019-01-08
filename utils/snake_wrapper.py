@@ -11,7 +11,7 @@ class ProcessFrame(gym.Wrapper):
         self.action_space = Discrete(4)
 
     def _step(self, act):
-        obs, rew, done, info = self.env.step(act)
+        obs, rew, done, info = self.env.step(int(act))
         return self._process_frame(obs), rew, done, info
 
     def _reset(self):
@@ -31,7 +31,7 @@ class FlattenFrame(gym.Wrapper):
         self.action_space = Discrete(4)
     
     def _step(self, act):
-        obs, rew, done, info = self.env.step(act)
+        obs, rew, done, info = self.env.step(int(act))
         return self._flatten_frame(obs), rew, done, info
 
     def _reset(self):
