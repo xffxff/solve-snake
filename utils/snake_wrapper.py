@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from gym.spaces import Box
+from gym.spaces import Box, Discrete
 
 
 class ProcessFrame(gym.Wrapper):
@@ -8,6 +8,7 @@ class ProcessFrame(gym.Wrapper):
     def __init__(self, env=None):
         super(ProcessFrame, self).__init__(env)
         self.observation_space = Box(low=0, high=255, shape=(30, 30, 1))
+        self.action_space = Discrete(4)
 
     def _step(self, act):
         obs, rew, done, info = self.env.step(act)
@@ -27,6 +28,7 @@ class FlattenFrame(gym.Wrapper):
     def __init__(self, env):
         super(FlattenFrame, self).__init__(env)
         self.observation_space = Box(low=0, high=255, shape=(900, ))
+        self.action_space = Discrete(4)
     
     def _step(self, act):
         obs, rew, done, info = self.env.step(act)
