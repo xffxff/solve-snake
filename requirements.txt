@@ -1,4 +1,5 @@
-numpy==1.15.4
-gym==0.10.9
-tensorflow==1.12.0
 joblib==0.13.0
+numpy==1.15.4
+tensorflow==1.12.0
+gym==0.10.9
+mpi4py==3.0.0
