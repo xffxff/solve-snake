@@ -50,7 +50,7 @@ def train(env_id, num_timesteps, seed):
             env_out = gym.make(env_id)
             env_out.unit_size = 5
             env_out.snake_size = 5
-            # env_out.seed(seed + rank)
+            env_out.seed(seed + rank)
             env_out = EnvWrapper(env_out)
             # env_out = FrameStack(env_out, 2)
             # env_out = DummyVecEnv([lambda: env_out])
