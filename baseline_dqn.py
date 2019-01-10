@@ -31,6 +31,8 @@ class EnvWrapper(gym.Wrapper):
         img = np.reshape(img, [75, 75, 1])
         return img.astype(np.uint8)
 
+logger.configure()
+
 env = gym.make('snake-v0')
 env.unit_size = 5
 env.snake_size = 5
@@ -57,6 +59,6 @@ model = DQN(
 )
 
 model.learn(total_timesteps=10000000)
-model.save("deepq_breakout")
+model.save("deepq_snake")
 
 del model # remove to demonstrate saving and loading
