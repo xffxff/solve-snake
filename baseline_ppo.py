@@ -56,8 +56,8 @@ def train(env_id, num_timesteps, seed):
             return env_out
         return _thunk
 
-    env = SubprocVecEnv([make_env(i) for i in range(4)])
-    env = VecFrameStack(env, 2)
+    env = SubprocVecEnv([make_env(i) for i in range(8)])
+    env = VecFrameStack(env, 3)
 
     print(env.reset().shape)
 
@@ -72,5 +72,6 @@ def train(env_id, num_timesteps, seed):
 def main():
     logger.configure()
     model, env = train('snake-v0', num_timesteps=10000000, seed=0)
+    model.save('ppo_snake')
 
 main()
