@@ -8,6 +8,7 @@ import gym
 import gym_snake
 from gym.spaces import *
 import numpy as np
+from gym.wrappers.time_limit import TimeLimit
 
 
 class EnvWrapper(gym.Wrapper):
@@ -33,6 +34,7 @@ class EnvWrapper(gym.Wrapper):
 env = gym.make('snake-v0')
 env.unit_size = 5
 env.snake_size = 5
+env = TimeLimit(env, max_episode_steps=1000)
 env = EnvWrapper(env)
 env = FrameStack(env, 3)
 env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
@@ -51,6 +53,7 @@ model = DQN(
     prioritized_replay=True,
     prioritized_replay_alpha=0.6,
     checkpoint_freq=10000,
+    verbose=1,
 )
 
 model.learn(total_timesteps=10000000)
