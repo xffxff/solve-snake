@@ -3,16 +3,13 @@ import gym
 import gym_snake
 from gym.spaces import Box, Discrete
 from gym.utils import seeding
+from gym.wrappers.time_limit import TimeLimit
 
-from stable_baselines.common.cmd_util import mujoco_arg_parser
 from stable_baselines import bench, logger
 from stable_baselines.common import set_global_seeds
-from stable_baselines.common.vec_env.vec_normalize import VecNormalize
 from stable_baselines.ppo2 import PPO2
-from stable_baselines.common.policies import MlpPolicy, CnnPolicy
-from stable_baselines.common.vec_env.dummy_vec_env import DummyVecEnv
-from stable_baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
-from stable_baselines.common.vec_env import VecFrameStack
+from stable_baselines.common.policies import CnnPolicy
+from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 from stable_baselines.common.atari_wrappers import FrameStack
 
 
@@ -51,6 +48,7 @@ def train(env_id, num_timesteps, seed):
             env_out.unit_size = 5
             env_out.snake_size = 5
             env_out.seed(seed + rank)
+            env_out = TimeLimit(env_out, max_episode_steps=1000)
             env_out = EnvWrapper(env_out)
             # env_out = FrameStack(env_out, 2)
             # env_out = DummyVecEnv([lambda: env_out])
