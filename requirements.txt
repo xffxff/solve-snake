@@ -1,5 +1,6 @@
-joblib==0.13.0
+gym==0.10.9
 numpy==1.15.4
 tensorflow==1.12.0
-gym==0.10.9
+joblib==0.13.0
+stable_baselines==2.3.0
 mpi4py==3.0.0
