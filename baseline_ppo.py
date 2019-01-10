@@ -2,6 +2,7 @@ import numpy as np
 import gym
 import gym_snake
 from gym.spaces import Box, Discrete
+from gym.utils import seeding
 
 from stable_baselines.common.cmd_util import mujoco_arg_parser
 from stable_baselines import bench, logger
@@ -44,18 +45,21 @@ def train(env_id, num_timesteps, seed):
     :param num_timesteps: (int) the number of timesteps to run
     :param seed: (int) Used to seed the random generator.
     """
-    def make_env():
-        env_out = gym.make(env_id)
-        env_out.unit_size = 5
-        env_out.snake_size = 5
-        env_out = EnvWrapper(env_out)
-        # env_out = FrameStack(env_out, 2)
-        env_out = bench.Monitor(env_out, logger.get_dir(), allow_early_resets=True)
-        return env_out
+    def make_env(rank):
+        def _thunk():
+            env_out = gym.make(env_id)
+            env_out.unit_size = 5
+            env_out.snake_size = 5
+            # env_out.seed(seed + rank)
+            env_out = EnvWrapper(env_out)
+            # env_out = FrameStack(env_out, 2)
+            # env_out = DummyVecEnv([lambda: env_out])
+            env_out = bench.Monitor(env_out, logger.get_dir(), allow_early_resets=True)
+            return env_out
+        return _thunk
 
-    env = DummyVecEnv([make_env])
-    env = SubprocVecEnv([make_env for i in range(2)])
-    env = VecFrameStack(env, 4)
+    env = SubprocVecEnv([make_env(i) for i in range(4)])
+    env = VecFrameStack(env, 2)
 
     print(env.reset().shape)
 
