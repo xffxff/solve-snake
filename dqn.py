@@ -4,20 +4,26 @@ import tensorflow as tf
 import numpy as np 
 import gym
 import gym_snake
+import snake_gym
 from tensorflow import layers
 
 from utils.snake_wrapper import *
 from utils.dqn_utils import *
 from utils.logx import EpochLogger
+from stable_baselines.common.atari_wrappers import WarpFrame
+
+# def create_atari_env(env_name):
+#     env = gym.make(env_name)
+#     env.unit_size = 2
+#     env.snake_size = 2
+#     env = ProcessFrame(env)
+#     # env = FlattenFrame(env)
+#     return env
 
 def create_atari_env(env_name):
     env = gym.make(env_name)
-    env.unit_size = 2
-    env.snake_size = 2
-    env = ProcessFrame(env)
-    # env = FlattenFrame(env)
+    env = WarpFrame(env)
     return env
-
 
 class DQNNet(object):
 
@@ -130,7 +136,7 @@ class DQNRunner(object):
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
-                 frame_stack=2,
+                 frame_stack=3,
                  max_ep_len=1000,
                  output_dir=''
                  ):
@@ -266,7 +272,7 @@ class DQNRunner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='snake-v0')
+    parser.add_argument('--env_name', type=str, default='Snake-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
     args = parser.parse_args()
 
