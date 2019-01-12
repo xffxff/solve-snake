@@ -86,14 +86,15 @@ class Monitor(Wrapper):
         if self.needs_reset:
             raise RuntimeError("Tried to step environment that needs reset")
         observation, reward, done, info = self.env.step(action)
-        self.rewards.append(reward)
         if reward:
             self.no_reward_len = 0
         else:
             self.no_reward_len += 1
 
         if self.no_reward_len == 100:
+            reward = -1
             done = True
+        self.rewards.append(reward)
         if done:
             self.needs_reset = True
             ep_rew = sum(self.rewards)
