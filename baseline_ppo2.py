@@ -5,9 +5,10 @@ from gym.spaces import Box, Discrete
 from gym.utils import seeding
 from gym.wrappers.time_limit import TimeLimit
 
-from stable_baselines import bench, logger
+from stable_baselines import logger
+from utils.monitor import Monitor
 from stable_baselines.common import set_global_seeds
-from stable_baselines.ppo2 import PPO2
+from ppo2 import PPO2
 from stable_baselines.common.policies import CnnPolicy
 from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
@@ -27,7 +28,7 @@ def train(env_id, num_timesteps, seed):
             env_out.seed(seed + rank)
             env_out = TimeLimit(env_out, max_episode_steps=1000)
             env_out = WarpFrame(env_out)
-            env_out = bench.Monitor(env_out, logger.get_dir(), allow_early_resets=True)
+            env_out = Monitor(env_out, logger.get_dir(), allow_early_resets=True)
             return env_out
         return _thunk
 
@@ -45,7 +46,7 @@ def train(env_id, num_timesteps, seed):
 
 def main():
     logger.configure()
-    model, env = train('Snake-v0', num_timesteps=10000000, seed=0)
-    model.save('ppo_snake')
+    model, env = train('Snake-v0', num_timesteps=20000, seed=0)
+    model.save('ppo_snake2')
 
 main()
