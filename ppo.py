@@ -11,7 +11,7 @@ from gym.spaces import Discrete, Box
 from tensorflow.distributions import Categorical, Normal
 from utils.checkpointer import get_latest_check_num
 from utils.logx import EpochLogger
-from utils.reward_wrapper import SimpleObservation, ComplexObservation
+from utils.observation_wrapper import SimpleObservation, ComplexObservation
 
 
 class PPOBuffer:
