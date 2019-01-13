@@ -43,35 +43,35 @@ env = WarpFrame(env)
 env = FrameStack(env, 3)
 env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
 
-# model = DQN(
-#     env=env,
-#     policy=CnnPolicy,
-#     learning_rate=1e-4,
-#     buffer_size=10000,
-#     exploration_fraction=0.1,
-#     exploration_final_eps=0.01,
-#     train_freq=4,
-#     learning_starts=10000,
-#     target_network_update_freq=1000,
-#     gamma=0.99,
-#     prioritized_replay=True,
-#     prioritized_replay_alpha=0.6,
-#     checkpoint_freq=10000,
-#     verbose=1,
-# )
+model = DQN(
+    env=env,
+    policy=CnnPolicy,
+    learning_rate=1e-4,
+    buffer_size=10000,
+    exploration_fraction=0.1,
+    exploration_final_eps=0.01,
+    train_freq=4,
+    learning_starts=10000,
+    target_network_update_freq=1000,
+    gamma=0.99,
+    prioritized_replay=True,
+    prioritized_replay_alpha=0.6,
+    checkpoint_freq=10000,
+    verbose=1,
+)
 
-# model.learn(total_timesteps=2000000)
-# model.save("deepq_snake")
+model.learn(total_timesteps=2000000)
+model.save("deepq_snake")
 
-# del model # remove to demonstrate saving and loading
+del model # remove to demonstrate saving and loading
 
-model = DQN.load('deepq_snake.pkl')
+# model = DQN.load('deepq_snake.pkl')
 
-obs = env.reset()
-while True:
-    action, _states = model.predict(obs)
-    obs, rewards, dones, info = env.step(action)
-    env.render()
-    if dones:
-        print(info)
-        env.reset()
+# obs = env.reset()
+# while True:
+#     action, _states = model.predict(obs)
+#     obs, rewards, dones, info = env.step(action)
+#     env.render()
+#     if dones:
+#         print(info)
+#         env.reset()
