@@ -1,14 +1,15 @@
 
-from stable_baselines.common.atari_wrappers import FrameStack
+from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
 from stable_baselines.deepq.policies import MlpPolicy, CnnPolicy
 from stable_baselines import DQN
 from stable_baselines import bench, logger
 
 import gym
-import gym_snake
+import snake_gym
 from gym.spaces import *
 import numpy as np
 from gym.wrappers.time_limit import TimeLimit
+from utils.reward_wrapper import RewardDesign
 
 
 class EnvWrapper(gym.Wrapper):
@@ -33,11 +34,12 @@ class EnvWrapper(gym.Wrapper):
 
 logger.configure()
 
-env = gym.make('snake-v0')
-env.unit_size = 5
-env.snake_size = 5
+env = gym.make('Snake-v0')
+env.seed(0)
+env = RewardDesign(env)
 env = TimeLimit(env, max_episode_steps=1000)
-env = EnvWrapper(env)
+env = WarpFrame(env)
+# env = EnvWrapper(env)
 env = FrameStack(env, 3)
 env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
 
