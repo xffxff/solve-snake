@@ -1,17 +1,17 @@
 
 import time
 import gym
-import gym_snake
+import snake_gym
 import numpy as np
 import tensorflow as tf
+import os.path as osp
+from gym.wrappers import TimeLimit
 
 from gym.spaces import Discrete, Box
 from tensorflow.distributions import Categorical, Normal
-
+from utils.checkpointer import get_latest_check_num
 from utils.logx import EpochLogger
-from utils.snake_wrapper import *
-from utils.mpi_tf import MpiAdamOptimizer, sync_all_params
-from utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
+from utils.reward_wrapper import SimpleObservation, ComplexObservation
 
 
 class PPOBuffer:
@@ -21,10 +21,12 @@ class PPOBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, obs_space, action_space, size, gamma, lam):
-        img_h, img_w, img_c = obs_space.shape
-        self.obs_buf = np.zeros((size, img_h, img_w, img_c), dtype=np.float32)
-        self.act_buf = np.zeros(size, dtype=np.int32)
+    def __init__(self, obs_dim, action_space, size, gamma, lam):
+        self.obs_buf = np.zeros((size, obs_dim), dtype=np.float32)
+        if isinstance(action_space, Discrete):
+            self.act_buf = np.zeros(size, dtype=np.int32)
+        if isinstance(action_space, Box):
+            self.act_buf = np.zeros((size, action_space.shape[0]), dtype=np.float32)
         self.val_buf = np.zeros(size, dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
         self.ret_buf = np.zeros(size, dtype=np.float32)
@@ -91,9 +93,8 @@ class PPOBuffer:
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
         # adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        # adv_mean = np.mean(self.adv_buf)
-        # adv_std = np.std(self.adv_buf)
-        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
+        adv_mean = np.mean(self.adv_buf)
+        adv_std = np.std(self.adv_buf)
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf
 
@@ -103,8 +104,8 @@ class PPONet(object):
     def __init__(self,
                  obs,
                  act_space,
-                 hidden_sizes=(64,),
-                 activation=tf.nn.tanh,
+                 hidden_sizes=(64, 64),
+                 activation=tf.nn.relu,
                  output_activation=None):
         """Initialize the Network.
 
@@ -118,36 +119,27 @@ class PPONet(object):
         tf.logging.info(f'\t hidden_sizes: {hidden_sizes}')
         tf.logging.info(f'\t activation: {activation}')
         tf.logging.info(f'\t output_activation: {output_activation}')
-        # with tf.variable_scope('v'):
-        #     self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
-        # with tf.variable_scope('pi'):
-        #     logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
-        #     self.dist = self._categorical_policy(logits)
-        # with tf.variable_scope('old_pi'):
-        #     logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
-        #     self.old_dist = self._categorical_policy(logits)
-
         with tf.variable_scope('v'):
-            net = self._conv(obs)
-            self.v = tf.squeeze(self._mlp(net, list(hidden_sizes)+[1], activation, output_activation), axis=1)
+            self.v = tf.squeeze(self._mlp(obs, list(hidden_sizes)+[1], activation, output_activation), axis=1)
         with tf.variable_scope('pi'):
-            net = self._conv(obs)
-            logits = self._mlp(net, list(hidden_sizes)+[act_space.n], activation, None)
-            self.dist = self._categorical_policy(logits)
+            if isinstance(act_space, Discrete):
+                logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+                self.dist = self._categorical_policy(logits)
+            if isinstance(act_space, Box):
+                mu = self._mlp(obs, list(hidden_sizes)+[act_space.shape[0]], activation, None)
+                self.dist = self._gaussian_policy(mu, act_space.shape[0])
         with tf.variable_scope('old_pi'):
-            net = self._conv(obs)
-            logits = self._mlp(net, list(hidden_sizes)+[act_space.n], activation, None)
-            self.old_dist = self._categorical_policy(logits)
+            if isinstance(act_space, Discrete):
+                logits = self._mlp(obs, list(hidden_sizes)+[act_space.n], activation, None)
+                self.old_dist = self._categorical_policy(logits)
+            if isinstance(act_space, Box):
+                mu = self._mlp(obs, list(hidden_sizes)+[act_space.shape[0]], activation, None)
+                self.old_dist = self._gaussian_policy(mu, act_space.shape[0])
     
     def _mlp(self, x, hidden_sizes, activation, output_activation):
         for h in hidden_sizes[:-1]:
             x = tf.layers.dense(x, h, activation)
         return tf.layers.dense(x, hidden_sizes[-1], output_activation)
-
-    def _conv(self, x):
-        x = tf.layers.conv2d(x, filters=10, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        x = tf.layers.conv2d(x, filters=5, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
-        return tf.layers.flatten(x)
 
     def _categorical_policy(self, logits):
         """Categorical policy for discrete actions
@@ -176,7 +168,7 @@ class PPONet(object):
 class PPOAgent(object):
 
     def __init__(self,
-                 obs_space,
+                 obs_dim,
                  act_space,
                  clip_ratio=0.2,
                  pi_lr=0.001,
@@ -190,12 +182,12 @@ class PPOAgent(object):
             pi_lr: float, Learning rate for Pi-networks.
             v_lr: float, Learning rate for V-networks.
         """
-        tf.logging.info(f'\t obs_space: {obs_space}')
+        tf.logging.info(f'\t obs_dim: {obs_dim}')
         tf.logging.info(f'\t act_space: {act_space}')
         tf.logging.info(f'\t clip_ratio: {clip_ratio}')
         tf.logging.info(f'\t pi_lr: {pi_lr}')
         tf.logging.info(f'\t v_lr: {v_lr}')
-        self.obs_space = obs_space
+        self.obs_dim = obs_dim
         self.act_space = act_space
 
         self.obs_ph, self.act_ph, self.adv_ph, self.ret_ph = self._create_placeholders()
@@ -203,15 +195,19 @@ class PPOAgent(object):
 
         self.act = self.dist.sample()
 
-        self.pi = self.dist.prob(self.act_ph)
-        self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
+        if isinstance(self.act_space, Discrete):
+            self.pi = self.dist.prob(self.act_ph)
+            self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
+        if isinstance(self.act_space, Box):
+            self.pi = tf.reduce_sum(self.dist.prob(self.act_ph), axis=1)
+            self.old_pi = tf.stop_gradient(tf.reduce_sum(self.old_dist.prob(self.act_ph), axis=1))
         ratio = self.pi / self.old_pi
         min_adv = tf.where(self.adv_ph > 0, (1 + clip_ratio) * self.adv_ph, (1 - clip_ratio) * self.adv_ph)
         self.pi_loss = -tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv))
         self.v_loss = tf.reduce_mean((self.ret_ph - self.v)**2)
 
-        self.train_pi = MpiAdamOptimizer(learning_rate=pi_lr).minimize(self.pi_loss)
-        self.train_v = MpiAdamOptimizer(learning_rate=v_lr).minimize(self.v_loss)
+        self.train_pi = tf.train.AdamOptimizer(pi_lr).minimize(self.pi_loss)
+        self.train_v = tf.train.AdamOptimizer(v_lr).minimize(self.v_loss)
 
         self.pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='pi')
         self.old_pi_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='old_pi')
@@ -223,14 +219,16 @@ class PPOAgent(object):
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
-        self.sess.run(sync_all_params())
         self.sync_old_pi_params()
 
+        self.saver = tf.train.Saver(max_to_keep=3)
+
     def _create_placeholders(self):
-        img_h, img_w, img_c = self.obs_space.shape
-        input_shape = (img_h, img_w, img_c)
-        obs_ph = tf.placeholder(tf.float32, shape=[None] + list(input_shape))
-        act_ph = tf.placeholder(tf.int32, shape=(None, ))
+        obs_ph = tf.placeholder(tf.float32, shape=(None, self.obs_dim))
+        if isinstance(self.act_space, Discrete):
+            act_ph = tf.placeholder(tf.int32, shape=(None, ))
+        if isinstance(self.act_space, Box):
+            act_ph = tf.placeholder(tf.float32, shape=(None, self.act_space.shape[0]))
         adv_ph = tf.placeholder(tf.float32, shape=(None, ))
         ret_ph = tf.placeholder(tf.float32, shape=(None, ))
         return obs_ph, act_ph, adv_ph, ret_ph
@@ -257,15 +255,13 @@ class PPOAgent(object):
 
     def get_kl(self, feed_dict):
         return self.sess.run([self.kl, self.entropy], feed_dict)
+    
+    def save_model(self, checkpoints_dir, epoch):
+        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt'), global_step=epoch)
 
-
-def create_atari_env(env_name):
-    env = gym.make(env_name)
-    env.unit_size = 2
-    env.snake_size = 2
-    env = ProcessFrame(env)
-    # env = FlattenFrame(env)
-    return env
+    def load_model(self, checkpoints_dir):
+        latest_model = get_latest_check_num(checkpoints_dir)
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_model}'))
 
 
 class PPORunner(object):
@@ -273,14 +269,15 @@ class PPORunner(object):
     def __init__(self,
                  env, 
                  seed,
-                 epochs=500,
+                 epochs=100,
                  train_epoch_len=5000,
+                 test_epoch_len=2000,
                  gamma=0.99,
                  lam=0.95,
                  dtarg=0.01,
                  train_pi_iters=80,
                  train_v_iters=80,
-                 output_dir=''):
+                 logger_kwargs=dict()):
         """Initialize the Runner object.
 
         Args:
@@ -307,26 +304,30 @@ class PPORunner(object):
         tf.logging.info(f'\t train_v_iters: {train_v_iters}')
         tf.logging.info(f'\t train_pi_iters: {train_pi_iters}')
         self.epochs = epochs
-        self.train_epoch_len = int(train_epoch_len / num_procs())
+        self.train_epoch_len = train_epoch_len
+        self.test_epoch_len = test_epoch_len
         self.dtarg = dtarg
         self.train_pi_iters = train_pi_iters
         self.train_v_iters = train_v_iters
-        self.output_dir = output_dir
+        self.logger_kwargs = logger_kwargs
+        self.checkpoints_dir = self.logger_kwargs['output_dir'] + '/checkpoints'
 
-        self.env = create_atari_env(env)
-        # self.env = gym.make(env)
+        self.env = gym.make(env)
+        # self.env = SimpleObservation(env=self.env)
+        self.env = ComplexObservation(self.env)
+        self.env = TimeLimit(self.env, max_episode_steps=1000)
+        
 
-        seed += 1000 * proc_id()
         tf.set_random_seed(seed)
         np.random.seed(seed)
         self.env.seed(seed)
 
-        self.max_traj = 1000 #self.env.spec.timestep_limit
+        self.max_traj = self.env.spec.timestep_limit
 
-        obs_space = self.env.observation_space
+        obs_dim = self.env.observation_space.shape[0]
         act_space = self.env.action_space
-        self.agent = PPOAgent(obs_space, act_space)
-        self.buffer = PPOBuffer(obs_space, act_space, self.train_epoch_len, gamma, lam)
+        self.agent = PPOAgent(obs_dim, act_space)
+        self.buffer = PPOBuffer(obs_dim, act_space, train_epoch_len, gamma, lam)
 
     def _collect_trajectories(self, epoch_len, logger):
         obs = self.env.reset()
@@ -334,7 +335,7 @@ class PPORunner(object):
         for step in range(epoch_len):
             act, v = self.agent.select_action(obs[None, ])
             logger.store(VVals=v)
-            next_obs, rew, done, info = self.env.step(int(act))
+            next_obs, rew, done, info = self.env.step(act)
             self.buffer.store(obs, act, rew, v)
             
             traj_r += rew
@@ -365,7 +366,6 @@ class PPORunner(object):
 
         for i in range(self.train_pi_iters):
             kl, entropy = self.agent.get_kl(feed_dict)
-            kl = mpi_avg(kl)
             logger.store(KL=kl, Entropy=entropy)
             if kl > 1.5 * self.dtarg:
                 logger.log(f'Early stopping at step {i} due to reaching max kl.')
@@ -376,12 +376,40 @@ class PPORunner(object):
             v_loss = self.agent.update_v_params(feed_dict)
             logger.store(VLoss=v_loss)
         self.agent.sync_old_pi_params()
+    
+    def run_test_phase(self, epoch_len, logger, render=False):
+        """Run test phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            logger: object, Object to store the information.
+        """
+
+        ep_r, ep_len = 0, 0
+        obs = self.env.reset()
+        for step in range(epoch_len):
+            if render: self.env.render()
+            act, _ = self.agent.select_action(obs[None, :])
+            time.sleep(0.1)
+            next_obs, reward, done, info = self.env.step(act)
+            ep_r += reward
+            ep_len += 1
+            obs = next_obs
+            
+            if done or ep_len == self.max_traj:
+                logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
+
+                obs = self.env.reset()
+                ep_r, ep_len = 0, 0
+
 
     def run_experiments(self):
-        logger = EpochLogger(self.output_dir)
+        logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(self.epochs):
             self._run_train_phase(self.train_epoch_len, logger)
+            self.agent.save_model(self.checkpoints_dir, epoch)
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
@@ -393,22 +421,37 @@ class PPORunner(object):
             logger.log_tabular('TotalEnvInteracts', (epoch + 1) * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
+    
+    def run_test_and_render(self):
+        """Load the saved model and test it."""
+        logger = EpochLogger()
+        self.agent.load_model(self.checkpoints_dir)
+        for epoch in range(self.epochs):
+            self.run_test_phase(self.test_epoch_len, logger, render=True)
+            logger.log_tabular('Epoch', epoch+1)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.dump_tabular()
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='snake-v0')
-    parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--cpu', '-c', type=int, default=2)
+    parser.add_argument('--env', type=str, default='Snake-v0')
+    parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--exp_name', type=str, default='ppo')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
-    # mpi_fork(args.cpu)
+    # from spinup.utils.run_utils import setup_logger_kwargs
+    # logger_kwargs = setup_logger_kwargs(args.exp_name, args.env, args.seed)
 
+    logger_kwargs = {'exp_name': 'ppo', 'output_dir': \
+                    f'/home/xff/Code/solve-snake/data/{args.exp_name}/seed{args.seed}'}
     tf.logging.set_verbosity(tf.logging.INFO)
-    output_dir = "./data/ppo/seed{}".format(args.seed)
 
-    runner = PPORunner(args.env, args.seed, output_dir=output_dir)
-    runner.run_experiments()
+    runner = PPORunner(args.env, args.seed, logger_kwargs=logger_kwargs)
+    if args.test:
+        runner.run_test_and_render()
+    else:
+        runner.run_experiments()
     
