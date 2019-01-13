@@ -3,41 +3,37 @@ import time
 import tensorflow as tf
 import numpy as np 
 import gym
-import gym_snake
 import snake_gym
 from tensorflow import layers
+from gym.wrappers import TimeLimit
+from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
 
-from utils.snake_wrapper import *
 from utils.dqn_utils import *
 from utils.logx import EpochLogger
-from stable_baselines.common.atari_wrappers import WarpFrame
+from utils.reward_wrapper import RewardDesign
 
-# def create_atari_env(env_name):
-#     env = gym.make(env_name)
-#     env.unit_size = 2
-#     env.snake_size = 2
-#     env = ProcessFrame(env)
-#     # env = FlattenFrame(env)
-#     return env
+
 
 def create_atari_env(env_name):
+    # full_env_name = f'{env_name}NoFrameskip-v4'
+    # full_env_name = '{}NoFrameskip-v4'.format(env_name)
     env = gym.make(env_name)
+    env = RewardDesign(env)
+    env = TimeLimit(env, max_episode_steps=1000)
     env = WarpFrame(env)
+    # env = FrameStack(env, 3)
     return env
+
 
 class DQNNet(object):
 
     def __init__(self, obs, act_n):
-        out = layers.conv2d(obs, filters=10, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        out = layers.conv2d(out, filters=5, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        out = layers.conv2d(obs, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
+        out = layers.conv2d(out, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        out = layers.conv2d(out, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
         out = layers.flatten(out)
-        out = layers.dense(out, units=64, activation=tf.nn.relu)
+        out = layers.dense(out, units=512, activation=tf.nn.relu)
         self.out = layers.dense(out, units=act_n, activation=None)
-        
-        # net = layers.dense(obs, units=256, activation=tf.nn.relu)
-        # net = layers.dense(net, units=128, activation=tf.nn.relu)
-        # net = layers.dense(net, units=64, activation=tf.nn.relu)
-        # self.out = layers.dense(net, units=act_n)
     
     def network_output(self):
         return self.out
@@ -92,12 +88,9 @@ class DQNAgent(object):
     def _create_placeholders(self):
         img_h, img_w, img_c = self.obs_space.shape
         input_shape = (img_h, img_w, img_c * self.frame_stack)
-        # obs_dim = self.obs_space.shape[0]
         self.obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
-        # self.obs_ph = tf.placeholder(tf.uint8, [None,obs_dim])
         self.act_ph = tf.placeholder(tf.int32, [None])
         self.rew_ph = tf.placeholder(tf.float32, [None])
-        # self.next_obs_ph = tf.placeholder(tf.uint8, [None, obs_dim])
         self.next_obs_ph = tf.placeholder(tf.uint8, [None] + list(input_shape))
         self.done_ph = tf.placeholder(tf.float32, [None])
         self.lr_ph = tf.placeholder(tf.float32, None)
@@ -136,9 +129,8 @@ class DQNRunner(object):
                  target_update_freq=10000,
                  buffer_size=int(1e6),
                  batch_size=32,
-                 frame_stack=3,
-                 max_ep_len=1000,
-                 output_dir=''
+                 frame_stack=2,
+                 logger_kwargs=dict(),
                  ):
         """Initialize the Runner object.
 
@@ -166,7 +158,6 @@ class DQNRunner(object):
         tf.logging.info('buffer_size: {}'.format(buffer_size))
         tf.logging.info('batch_size: {}'.format(batch_size))
         tf.logging.info('frame_stack: {}'.format(frame_stack))
-        tf.logging.info('output_dir: {}'.format(output_dir))
         self.env = create_atari_env(env_name)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
@@ -174,8 +165,7 @@ class DQNRunner(object):
         self.learning_freq = learning_freq
         self.target_update_freq = target_update_freq
         self.batch_size = batch_size
-        self.max_ep_len = max_ep_len
-        self.output_dir = output_dir
+        self.logger_kwargs = logger_kwargs
 
         tf.set_random_seed(seed)
         np.random.seed(seed)
@@ -213,15 +203,14 @@ class DQNRunner(object):
         if np.random.random() < epsilon:
             act = self.env.action_space.sample()
         else:
-            # act = self.agent.select_action(self.obs[None, :])
             act = self.agent.select_action(self.replay_buffer.encode_recent_observation()[None, :])
-        next_obs, rew, done, info = self.env.step(int(act))
+        next_obs, rew, done, info = self.env.step(act)
         self.ep_len += 1
         self.ep_r += rew
         self.t += 1
         self.replay_buffer.store_effect(idx, act, rew, done)
         self.obs = next_obs
-        if done or self.ep_len == self.max_ep_len:
+        if done:
             logger.store(EpRet=self.ep_r, EpLen=self.ep_len)
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
@@ -252,7 +241,7 @@ class DQNRunner(object):
             self._train_one_step(logger)
 
     def run_experiment(self):
-        logger = EpochLogger(self.output_dir)
+        logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(1, self.epochs + 1):
             self._run_train_phase(logger)
@@ -276,8 +265,10 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     args = parser.parse_args()
 
+    from utils.run_utils import setup_logger_kwargs
+    logger_kwargs = setup_logger_kwargs(exp_name='dqn', env_name=args.env_name, seed=args.seed)
+
     tf.logging.set_verbosity(tf.logging.INFO)
     
-    output_dir = f'./data/dqn/seed{args.seed}'
-    runner = DQNRunner(args.env_name, args.seed, output_dir=output_dir)
+    runner = DQNRunner(args.env_name, args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiment()
