@@ -1,74 +1,63 @@
 
 import gym
-import numpy as np 
-from gym.spaces import Box, Discrete
+from gym.wrappers import TimeLimit
+import numpy as np
 
 
-class SnakeCellState(object):
-    EMPTY = 0
-    WALL = 1
-    BITE = 2
-    FOOD = 3
+class DistanceReward(gym.Wrapper):
 
-class SnakeReward(object):
-    ALIVE = 0.
-    FOOD = 1.
-    DEAD = -1.
-    WON = 100.
+    def __init__(self, env):
+        super(DistanceReward, self).__init__(env)
+        self.is_not_hungry = 40
 
-class SnakeAction(object):
-    LEFT = 0
-    RIGHT = 1
-    UP = 2
-    DOWN = 3
-
-
-class RewardDesign(gym.Wrapper):
-
-    def __init__(self, env=None):
-        super(RewardDesign, self).__init__(env)
-    
     def step(self, action):
         assert self.env.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
 
         if not self.env.is_valid_action(action):
-            action = self.env.prev_action
-        self.env.prev_action = action
+            action = self.env.prev_act
+        self.env.prev_act = action
 
-        next_head = self.env.next_head(action)
-        next_head_state = self.env.cell_state(next_head)
+        prev_snake_head = self.env.snake.head
+        snake_tail = self.env.snake.step(action)
+        self.is_not_hungry -= 1
 
-        prev_head = self.env.snake_head
-
-        self.env.snake_head = next_head
-        self.env.snake.appendleft(next_head)
-
+        reward = 0.
         done = False
-        if next_head_state == SnakeCellState.WALL:
-            reward = SnakeReward.DEAD
+            
+        if self.env.snake.head == self.env.food:
+            self.is_not_hungry = 40 + len(self.env.snake.snake)
+            reward += 1.
+            self.env.snake.snake.append(snake_tail)
+            empty_cells = self.env.get_empty_cells()
+            self.env.food = empty_cells[self.env.np_random.choice(len(empty_cells))]
+        
+        #snake collided wall
+        if self.env.is_collided_wall(self.env.snake.head):
+            reward -= 1.
             done = True
-        elif next_head_state == SnakeCellState.BITE:
-            reward = SnakeReward.DEAD
+        
+        #snake bite itself 
+        elif self.env.snake.head in self.env.snake.body:
+            reward -= 1.
             done = True
-        elif next_head_state == SnakeCellState.FOOD:
-            if len(self.env.empty_cells) > 0:
-                self.env.food = self.env.empty_cells[self.env.np_random.choice(len(self.env.empty_cells))]
-                self.env.empty_cells.remove(self.env.food)
-                reward = SnakeReward.FOOD
-            else:
-                reward = SnakeReward.WON
-                done = True
+
         else:
-            if self._distance(self.env.snake_head, self.env.food) < self._distance(prev_head, self.env.food):
-                reward = 0.1
-            else:
-                reward = -0.1
-            self.env.empty_cells.remove(self.env.snake_head)
-            emtpy_cell = self.env.snake.pop()
-            self.env.empty_cells.append(emtpy_cell)
+            snake_len = len(self.env.snake.snake)
+            prev_distance = self.distance_to_food(prev_snake_head)
+            curr_distance = self.distance_to_food(self.env.snake.head)
+            if snake_len == 1:
+                snake_len = 2
+            reward += (np.log(snake_len + prev_distance) - np.log(snake_len + curr_distance)) / np.log(snake_len)
+        
+        if not self.is_not_hungry:
+            reward -= 0.5 / len(self.env.snake.snake)
+            self.is_not_hungry = 40 + len(self.env.snake.snake)
+
+        reward = np.clip(reward, -1., 1.)
+
         return self.env.get_image(), reward, done, {}
-    
-    def _distance(self, x, y):
-        return np.sum((np.array(x) - np.array(y))**2)
 
-
+    def distance_to_food(self, head):
+        head_x, head_y = head
+        food_x, food_y = self.env.food
+        return np.sqrt((head_x - food_x)**2 + (head_y - food_y)**2)

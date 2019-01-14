@@ -12,7 +12,7 @@ from ppo2 import PPO2
 from stable_baselines.common.policies import CnnPolicy
 from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
-from utils.reward_wrapper import RewardDesign
+from utils.reward_wrapper import DistanceReward
 
 
 def train(env_id, num_timesteps, seed):
@@ -27,7 +27,7 @@ def train(env_id, num_timesteps, seed):
         def _thunk():
             env_out = gym.make(env_id)
             env_out.seed(seed + rank)
-            env_out = RewardDesign(env_out)
+            env_out = DistanceReward(env_out)
             env_out = TimeLimit(env_out, max_episode_steps=1000)
             env_out = WarpFrame(env_out)
             env_out = bench.Monitor(env_out, logger.get_dir(), allow_early_resets=True)
@@ -35,7 +35,7 @@ def train(env_id, num_timesteps, seed):
         return _thunk
 
     env = SubprocVecEnv([make_env(i) for i in range(8)])
-    env = VecFrameStack(env, 3)
+    env = VecFrameStack(env, 2)
     print(env.reset().shape)
 
     set_global_seeds(seed)
@@ -43,12 +43,18 @@ def train(env_id, num_timesteps, seed):
     model = PPO2(policy=policy, env=env, n_steps=128, nminibatches=4, lam=0.95, gamma=0.99, noptepochs=4,
                  ent_coef=0.01, learning_rate=lambda f: f * 2.5e-4, cliprange=lambda f: f * 0.1, verbose=1)
     model.learn(total_timesteps=num_timesteps)
+    # model = PPO2.load('ppo_snake2.pkl')
+    # obs = env.reset()
+    # while True:
+        # action, _states = model.predict(obs)
+        # obs, rewards, dones, info = env.step(action)
+        # env.render()
 
     return model, env
 
 def main():
     logger.configure()
     model, env = train('Snake-v0', num_timesteps=10000000, seed=0)
-    model.save('ppo_snake2')
+    model.save('ppo_snake')
 
 main()
