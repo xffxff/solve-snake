@@ -8,7 +8,7 @@ from gym.wrappers.time_limit import TimeLimit
 from stable_baselines import logger, bench
 # from utils.monitor import Monitor
 from stable_baselines.common import set_global_seeds
-from ppo2 import PPO2
+from stable_baselines.ppo2 import PPO2
 from stable_baselines.common.policies import CnnPolicy
 from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
@@ -54,7 +54,7 @@ def train(env_id, num_timesteps, seed):
 
 def main():
     logger.configure()
-    model, env = train('Snake-v0', num_timesteps=10000000, seed=0)
+    model, env = train('Snake-v0', num_timesteps=5000000, seed=0)
     model.save('ppo_snake')
 
 main()
