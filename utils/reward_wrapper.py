@@ -8,7 +8,6 @@ class DistanceReward(gym.Wrapper):
 
     def __init__(self, env):
         super(DistanceReward, self).__init__(env)
-        self.is_not_hungry = 40
 
     def step(self, action):
         assert self.env.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
@@ -19,20 +18,19 @@ class DistanceReward(gym.Wrapper):
 
         prev_snake_head = self.env.snake.head
         snake_tail = self.env.snake.step(action)
-        self.is_not_hungry -= 1
 
         reward = 0.
         done = False
-            
+        
+        #snake ate food
         if self.env.snake.head == self.env.food:
-            self.is_not_hungry = 40 + len(self.env.snake.snake)
             reward += 1.
             self.env.snake.snake.append(snake_tail)
             empty_cells = self.env.get_empty_cells()
             self.env.food = empty_cells[self.env.np_random.choice(len(empty_cells))]
         
         #snake collided wall
-        if self.env.is_collided_wall(self.env.snake.head):
+        elif self.env.is_collided_wall(self.env.snake.head):
             reward -= 1.
             done = True
         
@@ -45,14 +43,11 @@ class DistanceReward(gym.Wrapper):
             snake_len = len(self.env.snake.snake)
             prev_distance = self.distance_to_food(prev_snake_head)
             curr_distance = self.distance_to_food(self.env.snake.head)
-            if snake_len == 1:
-                snake_len = 2
-            reward += (np.log(snake_len + prev_distance) - np.log(snake_len + curr_distance)) / np.log(snake_len)
-        
-        if not self.is_not_hungry:
-            reward -= 0.5 / len(self.env.snake.snake)
-            self.is_not_hungry = 40 + len(self.env.snake.snake)
-
+            if prev_distance < curr_distance:
+                reward -= 0.1
+            if prev_distance > curr_distance:
+                reward += 0.1
+            
         reward = np.clip(reward, -1., 1.)
 
         return self.env.get_image(), reward, done, {}
