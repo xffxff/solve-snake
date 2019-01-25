@@ -6,7 +6,6 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.wrappers import TimeLimit
-from stable_baselines.common.atari_wrappers import LazyFrames
 
 
 class WrapFrame(gym.ObservationWrapper):
