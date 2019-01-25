@@ -1,18 +1,18 @@
 
-import time
 import os.path as osp
+import time
 
 import gym
 import numpy as np
 import tensorflow as tf
 from gym.wrappers import TimeLimit
-from utils.wrappers import WrapFrame, FrameStack, DistanceReward
 from tensorflow import layers
 
 import snake_gym
+from utils.checkpointer import get_latest_check_num
 from utils.dqn_utils import *
 from utils.logx import EpochLogger
-from utils.checkpointer import get_latest_check_num
+from utils.wrappers import DistanceReward, WrapFrame
 
 
 def create_atari_env(env_name):
@@ -328,4 +328,3 @@ if __name__ == '__main__':
         runner.run_test_and_render()
     else:
         runner.run_experiment()
-
