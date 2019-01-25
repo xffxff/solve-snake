@@ -3,6 +3,8 @@ import time
 import os.path as osp
 
 import gym
+from gym import spaces
+import cv2
 import numpy as np
 import tensorflow as tf
 from gym.wrappers import TimeLimit
@@ -16,11 +18,36 @@ from utils.reward_wrapper import DistanceReward
 from utils.checkpointer import get_latest_check_num
 
 
+class WrapFrame(gym.ObservationWrapper):
+    def __init__(self, env):
+        """
+        Warp frames to 84x84 as done in the Nature paper and later work.
+
+        :param env: (Gym Environment) the environment
+        """
+        gym.ObservationWrapper.__init__(self, env)
+        self.width = 84
+        self.height = 84
+        self.observation_space = spaces.Box(low=0, high=255, shape=(self.height, self.width, 1),
+                                            dtype=env.observation_space.dtype)
+
+    def observation(self, frame):
+        """
+        returns the current observation from a frame
+
+        :param frame: ([int] or [float]) environment frame
+        :return: ([int] or [float]) the observation
+        """
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+        return frame[:, :, None]
+
+
 def create_atari_env(env_name):
     env = gym.make(env_name)
     env = DistanceReward(env)
     env = TimeLimit(env, max_episode_steps=1000)
-    env = WarpFrame(env)
+    env = WrapFrame(env)
     return env
 
 
