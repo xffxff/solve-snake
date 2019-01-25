@@ -149,7 +149,7 @@ class DQNAgent(object):
 
     def load_model(self, checkpoints_dir):
         latest_model = get_latest_check_num(checkpoints_dir)
-        self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_model}'))
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, 'tf_ckpt-{}'.format(latest_model)))
 
 
 class DQNRunner(object):
