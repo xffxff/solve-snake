@@ -15,8 +15,8 @@ from utils.logx import EpochLogger
 from utils.wrappers import DistanceReward, WrapFrame
 
 
-def create_atari_env(env_name):
-    env = gym.make(env_name)
+def create_env(env_name):
+    env = gym.make(env_name)    
     env = DistanceReward(env)
     env = TimeLimit(env, max_episode_steps=1000)
     env = WrapFrame(env)
@@ -166,7 +166,7 @@ class DQNRunner(object):
         tf.logging.info('buffer_size: {}'.format(buffer_size))
         tf.logging.info('batch_size: {}'.format(batch_size))
         tf.logging.info('frame_stack: {}'.format(frame_stack))
-        self.env = create_atari_env(env_name)
+        self.env = create_env(env_name)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
         self.test_epoch_len = test_epoch_len
@@ -270,6 +270,7 @@ class DQNRunner(object):
             self.replay_buffer.store_frame(obs)
             act = self.agent.select_action(self.replay_buffer.encode_recent_observation()[None, :])
             next_obs, reward, done, info = self.env.step(act)
+            time.sleep(0.1)
             ep_r += reward
             ep_len += 1
             obs = next_obs
