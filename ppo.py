@@ -167,11 +167,11 @@ class PPOAgent(object):
             pi_lr: float, Learning rate for Pi-networks.
             v_lr: float, Learning rate for V-networks.
         """
-        tf.logging.info(f'\t obs_space: {obs_space}')
-        tf.logging.info(f'\t act_space: {act_space}')
-        tf.logging.info(f'\t clip_ratio: {clip_ratio}')
-        tf.logging.info(f'\t pi_lr: {pi_lr}')
-        tf.logging.info(f'\t v_lr: {v_lr}')
+        tf.logging.info('\t obs_space: {}'.format(obs_space))
+        tf.logging.info('\t act_space: {}'.format(act_space))
+        tf.logging.info('\t clip_ratio: {}'.format(clip_ratio))
+        tf.logging.info('\t pi_lr: {}'.format(pi_lr))
+        tf.logging.info('\t v_lr: {}'.format(v_lr))
         self.obs_space = obs_space
         self.act_space = act_space
 
@@ -267,15 +267,15 @@ class PPORunner(object):
                 policy objective per epoch.
             logger_kwargs: int, Keyword args for Epochlogger.
         """
-        tf.logging.info(f'\t env: {env}')
-        tf.logging.info(f'\t seed: {seed}')
-        tf.logging.info(f'\t epochs: {epochs}')
-        tf.logging.info(f'\t gamma: {gamma}')
-        tf.logging.info(f'\t lam: {lam}')
-        tf.logging.info(f'\t dtarg: {dtarg}')
-        tf.logging.info(f'\t train_epoch_len: {train_epoch_len}')
-        tf.logging.info(f'\t train_v_iters: {train_v_iters}')
-        tf.logging.info(f'\t train_pi_iters: {train_pi_iters}')
+        tf.logging.info('\t env: {}'.format(env))
+        tf.logging.info('\t seed: {}'.format(seed))
+        tf.logging.info('\t epochs: {}'.format(epochs))
+        tf.logging.info('\t gamma: {}'.format(gamma))
+        tf.logging.info('\t lam: {}'.format(lam))
+        tf.logging.info('\t dtarg: {}'.format(dtarg))
+        tf.logging.info('\t train_epoch_len: {}'.format(train_epoch_len))
+        tf.logging.info('\t train_v_iters: {}'.format(train_v_iters))
+        tf.logging.info('\t train_pi_iters: {}'.format(train_pi_iters))
         self.epochs = epochs
         self.train_epoch_len = int(train_epoch_len / num_procs())
         self.dtarg = dtarg
@@ -337,7 +337,7 @@ class PPORunner(object):
             kl = mpi_avg(kl)
             logger.store(KL=kl, Entropy=entropy)
             if kl > 1.5 * self.dtarg:
-                logger.log(f'Early stopping at step {i} due to reaching max kl.')
+                logger.log('Early stopping at step {i} due to reaching max kl.')
                 break
             pi_loss = self.agent.update_pi_params(feed_dict)
             logger.store(PiLoss=pi_loss)
