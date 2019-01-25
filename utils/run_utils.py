@@ -21,7 +21,7 @@ import zlib
 DIV_LINE_WIDTH = 80
 
 # Where experiment outputs are saved by default:
-DEFAULT_DATA_DIR = osp.join(osp.abspath(osp.dirname(osp.dirname(osp.dirname(__file__)))), 'data')
+DEFAULT_DATA_DIR = osp.join(osp.abspath(osp.dirname(osp.dirname(__file__))), 'data')
 
 # Whether to automatically insert a date and time stamp into the names of
 # save directories:
