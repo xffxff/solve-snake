@@ -1,9 +1,12 @@
 
+from collections import deque
+
 import cv2
 import gym
 import numpy as np
 from gym import spaces
 from gym.wrappers import TimeLimit
+from stable_baselines.common.atari_wrappers import LazyFrames
 
 
 class WrapFrame(gym.ObservationWrapper):
@@ -64,7 +67,7 @@ class FrameStack(gym.Wrapper):
 
     def _get_ob(self):
         assert len(self.frames) == self.n_frames
-        return LazyFrames(list(self.frames))
+        return np.concatenate(self.frames, axis=2)
 
 
 class DistanceReward(gym.Wrapper):
