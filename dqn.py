@@ -1,27 +1,26 @@
 
 import time
-import tensorflow as tf
-import numpy as np 
+import os.path as osp
+
 import gym
-import snake_gym
-from tensorflow import layers
+import numpy as np
+import tensorflow as tf
 from gym.wrappers import TimeLimit
 from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
+from tensorflow import layers
 
+import snake_gym
 from utils.dqn_utils import *
 from utils.logx import EpochLogger
-from utils.reward_wrapper import RewardDesign
-
+from utils.reward_wrapper import DistanceReward
+from utils.checkpointer import get_latest_check_num
 
 
 def create_atari_env(env_name):
-    # full_env_name = f'{env_name}NoFrameskip-v4'
-    # full_env_name = '{}NoFrameskip-v4'.format(env_name)
     env = gym.make(env_name)
-    env = RewardDesign(env)
+    env = DistanceReward(env)
     env = TimeLimit(env, max_episode_steps=1000)
     env = WarpFrame(env)
-    # env = FrameStack(env, 3)
     return env
 
 
@@ -85,6 +84,8 @@ class DQNAgent(object):
         self.sess.run(tf.global_variables_initializer())
         self.sess.run(self.update_target_op)
 
+        self.saver = tf.train.Saver(max_to_keep=3)
+
     def _create_placeholders(self):
         img_h, img_w, img_c = self.obs_space.shape
         input_shape = (img_h, img_w, img_c * self.frame_stack)
@@ -116,6 +117,13 @@ class DQNAgent(object):
     def update_target(self, feed_dict):
         self.sess.run(self.update_target_op, feed_dict=feed_dict)
 
+    def save_model(self, checkpoints_dir, epoch):
+        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt'), global_step=epoch)
+
+    def load_model(self, checkpoints_dir):
+        latest_model = get_latest_check_num(checkpoints_dir)
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, f'tf_ckpt-{latest_model}'))
+
 
 class DQNRunner(object):
 
@@ -124,6 +132,7 @@ class DQNRunner(object):
                  seed,
                  epochs=500,
                  train_epoch_len=10000,
+                 test_epoch_len=2000,
                  start_learn=50000,
                  learning_freq=4,
                  target_update_freq=10000,
@@ -161,11 +170,14 @@ class DQNRunner(object):
         self.env = create_atari_env(env_name)
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
+        self.test_epoch_len = test_epoch_len
         self.start_learn = start_learn
         self.learning_freq = learning_freq
         self.target_update_freq = target_update_freq
         self.batch_size = batch_size
         self.logger_kwargs = logger_kwargs
+
+        self.checkpoints_dir = self.logger_kwargs['output_dir'] + '/checkpoints'
 
         tf.set_random_seed(seed)
         np.random.seed(seed)
@@ -173,6 +185,8 @@ class DQNRunner(object):
 
         obs_space = self.env.observation_space
         act_space = self.env.action_space
+
+        self.max_ep_len = self.env.spec.timestep_limit
 
         self.obs = self.env.reset()
         self.ep_len, self.ep_r = 0, 0
@@ -208,9 +222,10 @@ class DQNRunner(object):
         self.ep_len += 1
         self.ep_r += rew
         self.t += 1
+        done = False if self.ep_len == self.max_ep_len else done
         self.replay_buffer.store_effect(idx, act, rew, done)
         self.obs = next_obs
-        if done:
+        if done or self.ep_len == self.max_ep_len:
             logger.store(EpRet=self.ep_r, EpLen=self.ep_len)
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
@@ -239,12 +254,39 @@ class DQNRunner(object):
         for step in range(self.train_epoch_len):
             self._run_one_step(logger)
             self._train_one_step(logger)
+    
+    def run_test_phase(self, epoch_len, logger, render=False):
+        """Run test phase.
+
+        Args:
+            epoch_len: int, Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each training epoch.
+            logger: object, Object to store the information.
+        """
+
+        ep_r, ep_len = 0, 0
+        obs = self.env.reset()
+        for step in range(epoch_len):
+            if render: self.env.render()
+            self.replay_buffer.store_frame(obs)
+            act = self.agent.select_action(self.replay_buffer.encode_recent_observation()[None, :])
+            next_obs, reward, done, info = self.env.step(act)
+            ep_r += reward
+            ep_len += 1
+            obs = next_obs
+            
+            if done or ep_len == self.max_ep_len:
+                logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
+
+                obs = self.env.reset()
+                ep_r, ep_len = 0, 0
 
     def run_experiment(self):
         logger = EpochLogger(**self.logger_kwargs)
         start_time = time.time()
         for epoch in range(1, self.epochs + 1):
             self._run_train_phase(logger)
+            self.agent.save_model(self.checkpoints_dir, epoch)
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
@@ -258,11 +300,22 @@ class DQNRunner(object):
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
+    def run_test_and_render(self):
+        """Load the saved model and test it."""
+        logger = EpochLogger()
+        self.agent.load_model(self.checkpoints_dir)
+        for epoch in range(self.epochs):
+            self.run_test_phase(self.test_epoch_len, logger, render=True)
+            logger.log_tabular('Epoch', epoch+1)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.dump_tabular()
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', type=str, default='Snake-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     from utils.run_utils import setup_logger_kwargs
@@ -271,4 +324,9 @@ if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
     
     runner = DQNRunner(args.env_name, args.seed, logger_kwargs=logger_kwargs)
-    runner.run_experiment()
+
+    if args.test:
+        runner.run_test_and_render()
+    else:
+        runner.run_experiment()
+
