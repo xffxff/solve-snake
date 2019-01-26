@@ -12,7 +12,7 @@ from stable_baselines.ppo2 import PPO2
 from stable_baselines.common.policies import CnnPolicy
 from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 from stable_baselines.common.atari_wrappers import FrameStack, WarpFrame
-from utils.reward_wrapper import DistanceReward
+from utils.wrappers import DistanceReward
 
 
 def train(env_id, num_timesteps, seed):
@@ -28,7 +28,6 @@ def train(env_id, num_timesteps, seed):
             env_out = gym.make(env_id)
             env_out.seed(seed + rank)
             env_out = DistanceReward(env_out)
-            env_out = TimeLimit(env_out, max_episode_steps=1000)
             env_out = WarpFrame(env_out)
             env_out = bench.Monitor(env_out, logger.get_dir(), allow_early_resets=True)
             return env_out
