@@ -103,6 +103,8 @@ class PPOBuffer:
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
+        # adv_mean = np.mean(self.adv_buf)
+        # adv_std = np.std(self.adv_buf)
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         return self.obs_buf, self.act_buf, self.adv_buf, self.ret_buf
 
@@ -241,13 +243,13 @@ class PPORunner(object):
     def __init__(self,
                  env, 
                  seed,
-                 epochs=500,
+                 epochs=50,
                  train_epoch_len=5000,
                  gamma=0.99,
                  lam=0.95,
                  dtarg=0.01,
                  train_pi_iters=80,
-                 train_v_iters=5,
+                 train_v_iters=10,
                  logger_kwargs=dict()):
         """Initialize the Runner object.
 
@@ -323,34 +325,25 @@ class PPORunner(object):
         self._collect_trajectories(epoch_len, logger)
 
         obs_buf, act_buf, adv_buf, ret_buf = self.buffer.get()
-        idx = np.arange(epoch_len)
-        np.random.shuffle(idx)
-        for i in range(int(epoch_len / 32)):
-            batch_idx = idx[i*32: (i+1)*32]
-            obs_batch = obs_buf[batch_idx]
-            act_batch = act_buf[batch_idx]
-            adv_batch = adv_buf[batch_idx]
-            ret_batch = ret_buf[batch_idx]
+        feed_dict = {
+            self.agent.obs_ph: obs_buf,
+            self.agent.act_ph: act_buf,
+            self.agent.adv_ph: adv_buf,
+            self.agent.ret_ph: ret_buf,
+        }
 
-            feed_dict = {
-                self.agent.obs_ph: obs_batch,
-                self.agent.act_ph: act_batch,
-                self.agent.adv_ph: adv_batch,
-                self.agent.ret_ph: ret_batch,
-            }
-
-            for i in range(self.train_pi_iters):
-                kl, entropy = self.agent.get_kl(feed_dict)
-                kl = mpi_avg(kl)
-                logger.store(KL=kl, Entropy=entropy)
-                if kl > 1.5 * self.dtarg:
-                    logger.log('Early stopping at step {i} due to reaching max kl.')
-                    break
-                pi_loss = self.agent.update_pi_params(feed_dict)
-                logger.store(PiLoss=pi_loss)
-            for i in range(self.train_v_iters):
-                v_loss = self.agent.update_v_params(feed_dict)
-                logger.store(VLoss=v_loss)
+        for i in range(self.train_pi_iters):
+            kl, entropy = self.agent.get_kl(feed_dict)
+            kl = mpi_avg(kl)
+            logger.store(KL=kl, Entropy=entropy)
+            if kl > 1.5 * self.dtarg:
+                logger.log('Early stopping at step {} due to reaching max kl.'.format(i))
+                break
+            pi_loss = self.agent.update_pi_params(feed_dict)
+            logger.store(PiLoss=pi_loss)
+        for i in range(self.train_v_iters):
+            v_loss = self.agent.update_v_params(feed_dict)
+            logger.store(VLoss=v_loss)
         self.agent.sync_old_pi_params()
 
     def run_experiments(self):
@@ -380,7 +373,7 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', type=str, default='ppo')
     args = parser.parse_args()
 
-    # mpi_fork(args.cpu)
+    mpi_fork(args.cpu)
 
     from utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.env, args.seed)
