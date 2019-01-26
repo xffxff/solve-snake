@@ -130,11 +130,11 @@ class PPONet(object):
             self.old_dist = self._categorical_policy(logits)
 
     def _cnn(self, x, out_dim):
-        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.tanh)
         x = layers.flatten(x)
-        x = layers.dense(x, units=512, activation=tf.nn.relu)
+        x = layers.dense(x, units=512, activation=tf.nn.tanh)
         return layers.dense(x, units=out_dim, activation=None)
 
     def _categorical_policy(self, logits):
