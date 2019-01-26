@@ -68,11 +68,12 @@ class FrameStack(gym.Wrapper):
         assert len(self.frames) == self.n_frames
         return np.concatenate(self.frames, axis=2)
 
-
+INITIAL_HEALTH = 100
 class DistanceReward(gym.Wrapper):
 
     def __init__(self, env):
         super(DistanceReward, self).__init__(env)
+        self.health = INITIAL_HEALTH
 
     def step(self, action):
         assert self.env.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
@@ -86,11 +87,13 @@ class DistanceReward(gym.Wrapper):
 
         reward = 0.
         done = False
+        self.health -= 1
         
         #snake ate food
         if self.env.snake.head == self.env.food:
             reward += 1.
             self.env.snake.snake.append(snake_tail)
+            self.health = INITIAL_HEALTH + len(self.env.snake.snake) * 20
             empty_cells = self.env.get_empty_cells()
             self.env.food = empty_cells[self.env.np_random.choice(len(empty_cells))]
         
@@ -105,13 +108,18 @@ class DistanceReward(gym.Wrapper):
             done = True
 
         else:
-            snake_len = len(self.env.snake.snake)
-            prev_distance = self.distance_to_food(prev_snake_head)
-            curr_distance = self.distance_to_food(self.env.snake.head)
-            if prev_distance < curr_distance:
-                reward -= 0.1
-            if prev_distance > curr_distance:
-                reward += 0.1
+            if not self.health:
+                done = True
+                reward -= 1.
+                self.health = INITIAL_HEALTH
+            else:
+                snake_len = len(self.env.snake.snake)
+                prev_distance = self.distance_to_food(prev_snake_head)
+                curr_distance = self.distance_to_food(self.env.snake.head)
+                if prev_distance < curr_distance:
+                    reward -= 0.1
+                if prev_distance > curr_distance:
+                    reward += 0.1
             
         reward = np.clip(reward, -1., 1.)
 
