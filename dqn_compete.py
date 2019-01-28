@@ -246,7 +246,7 @@ class DQNRunner(object):
             self.t1 += 1
             self.replay_buffer1.store_effect(idx1, act1, rew[0], done[0])
             self.done1 = done[0]
-            if ep_len1 > 1000:
+            if self.ep_len1 > 1000:
                 self.done1 = True
         if not self.done2:
             self.ep_len2 += 1
@@ -254,10 +254,10 @@ class DQNRunner(object):
             self.t2 += 1
             self.replay_buffer2.store_effect(idx2, act2, rew[1], done[1])
             self.done2 = done[1]
-            if ep_len2 > 1000:
+            if self.ep_len2 > 1000:
                 self.done2 = True
         self.obs = next_obs
-        if info.get('game_over'): #or self.ep_len == self.max_ep_len:
+        if self.done1 and self.done2: #or self.ep_len == self.max_ep_len:
             logger.store(EpRet1=self.ep_r1, EpLen1=self.ep_len1)
             logger.store(EpRet2=self.ep_r2, EpLen2=self.ep_len2)
             self.obs = self.env.reset()
