@@ -270,7 +270,7 @@ class DQNRunner(object):
             self.t1 % self.learning_freq == 0 and \
             self.replay_buffer1.can_sample(self.batch_size)):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer1.sample(self.batch_size)
-            lr = self.lr_schedule.value(self.t)
+            lr = self.lr_schedule.value(self.t1)
             feed_dict = {
                 self.agent1.obs_ph: obs_batch,
                 self.agent1.act_ph: act_batch,
@@ -281,9 +281,9 @@ class DQNRunner(object):
             }
             loss = self.agent1.train_q(feed_dict)
             logger.store(Loss1=loss)
-            if self.learning_step % self.target_update_freq == 0:
+            if self.learning_step1 % self.target_update_freq == 0:
                 self.agent1.update_target(feed_dict)
-            self.learning_step += 1
+            self.learning_step1 += 1
         
         if (self.t2 > self.start_learn and \
             self.t2 % self.learning_freq == 0 and \
@@ -300,9 +300,9 @@ class DQNRunner(object):
             }
             loss = self.agent2.train_q(feed_dict)
             logger.store(Loss2=loss)
-            if self.learning_step % self.target_update_freq == 0:
+            if self.learning_step2 % self.target_update_freq == 0:
                 self.agent2.update_target(feed_dict)
-            self.learning_step += 1
+            self.learning_step2 += 1
             
     def _run_train_phase(self, logger):
         for step in range(self.train_epoch_len):
