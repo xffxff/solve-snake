@@ -33,6 +33,34 @@ class WrapFrame(gym.ObservationWrapper):
         return frame[:, :, None]
 
 
+class MultiWrapFrame(gym.ObservationWrapper):
+    def __init__(self, env):
+        """
+        Warp frames to 84x84 as done in the Nature paper and later work.
+
+        :param env: (Gym Environment) the environment
+        """
+        gym.ObservationWrapper.__init__(self, env)
+        self.width = 84
+        self.height = 84
+        self.observation_space = [spaces.Box(low=0, high=255, shape=(self.height, self.width, 1),
+                                            dtype=env.observation_space[0].dtype) for i in range(self.env.init_snake_num)]
+
+    def observation(self, frames):
+        """
+        returns the current observation from a frame
+
+        :param frame: ([int] or [float]) environment frame
+        :return: ([int] or [float]) the observation
+        """
+        observation = []
+        for frame in frames:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+            observation.append(frame[:, :, None])
+        return observation
+
+
 class FrameStack(gym.Wrapper):
     def __init__(self, env, n_frames):
         """Stack n_frames last frames.
