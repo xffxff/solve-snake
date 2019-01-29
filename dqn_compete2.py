@@ -279,17 +279,17 @@ class DQNRunner(object):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer1.sample(self.batch_size)
             lr = self.lr_schedule.value(self.t1)
             feed_dict = {
-                self.agent1.obs_ph: obs_batch,
-                self.agent1.act_ph: act_batch,
-                self.agent1.rew_ph: rew_batch,
-                self.agent1.next_obs_ph: next_obs_batch,
-                self.agent1.done_ph: done_batch,
-                self.agent1.lr_ph: lr,
+                self.agent.obs_ph: obs_batch,
+                self.agent.act_ph: act_batch,
+                self.agent.rew_ph: rew_batch,
+                self.agent.next_obs_ph: next_obs_batch,
+                self.agent.done_ph: done_batch,
+                self.agent.lr_ph: lr,
             }
-            loss = self.agent1.train_q(feed_dict)
+            loss = self.agent.train_q(feed_dict)
             logger.store(Loss1=loss)
             if self.learning_step1 % self.target_update_freq == 0:
-                self.agent1.update_target(feed_dict)
+                self.agent.update_target(feed_dict)
             self.learning_step1 += 1
         
         if (self.t2 > self.start_learn and \
@@ -298,17 +298,17 @@ class DQNRunner(object):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer2.sample(self.batch_size)
             lr = self.lr_schedule.value(self.t2)
             feed_dict = {
-                self.agent2.obs_ph: obs_batch,
-                self.agent2.act_ph: act_batch,
-                self.agent2.rew_ph: rew_batch,
-                self.agent2.next_obs_ph: next_obs_batch,
-                self.agent2.done_ph: done_batch,
-                self.agent2.lr_ph: lr,
+                self.agent.obs_ph: obs_batch,
+                self.agent.act_ph: act_batch,
+                self.agent.rew_ph: rew_batch,
+                self.agent.next_obs_ph: next_obs_batch,
+                self.agent.done_ph: done_batch,
+                self.agent.lr_ph: lr,
             }
-            loss = self.agent2.train_q(feed_dict)
+            loss = self.agent.train_q(feed_dict)
             logger.store(Loss2=loss)
             if self.learning_step2 % self.target_update_freq == 0:
-                self.agent2.update_target(feed_dict)
+                self.agent.update_target(feed_dict)
             self.learning_step2 += 1
             
     def _run_train_phase(self, logger):
