@@ -44,7 +44,7 @@ class MultiWrapFrame(gym.ObservationWrapper):
         self.width = 84
         self.height = 84
         self.observation_space = [spaces.Box(low=0, high=255, shape=(self.height, self.width, 1),
-                                            dtype=env.observation_space[0].dtype) for i in range(self.env.init_snake_num)]
+                                            dtype=env.observation_space[0].dtype) for i in range(self.env.n_snakes)]
 
     def observation(self, frames):
         """

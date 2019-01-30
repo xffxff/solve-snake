@@ -13,14 +13,14 @@ import snake_gym
 from utils.checkpointer import get_latest_check_num
 from utils.dqn_utils import *
 from utils.logx import EpochLogger
-from utils.wrappers import DistanceReward, MultiWrapFrame
+from utils.wrappers import DistanceReward, WrapFrame
 
 
 def create_env(env_name):
     env = gym.make(env_name)    
     # env = DistanceReward(env)
     # env = TimeLimit(env, max_episode_steps=1000)
-    env = MultiWrapFrame(env)
+    env = WrapFrame(env)
     return env
 
 
@@ -117,12 +117,12 @@ class DQNAgent(object):
     def update_target(self, feed_dict):
         self.sess.run(self.update_target_op, feed_dict=feed_dict)
 
-    def save_model(self, checkpoints_dir, epoch):
-        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt'), global_step=epoch)
+    def save_model(self, checkpoints_dir, epoch, agent):
+        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt_{}'.format(agent)), global_step=epoch)
 
-    def load_model(self, checkpoints_dir):
+    def load_model(self, checkpoints_dir, agent):
         latest_model = get_latest_check_num(checkpoints_dir)
-        self.saver.restore(self.sess, osp.join(checkpoints_dir, 'tf_ckpt-{}'.format(latest_model)))
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, 'tf_ckpt_{}-{}'.format(agent, latest_model)))
 
 
 class DQNRunner(object):
@@ -183,12 +183,11 @@ class DQNRunner(object):
         np.random.seed(seed)
         self.env.seed(seed)
 
-        obs_space = self.env.observation_space[0]
+        obs_space = self.env.observation_space
         act_space = self.env.action_space[0]
 
         self.max_ep_len = 1000 #self.env.spec.timestep_limit
 
-        self.env.env.n_foods = 20
         self.obs = self.env.reset()
         self.ep_len1, self.ep_r1 = 0, 0
         self.ep_len2, self.ep_r2 = 0, 0
@@ -209,37 +208,33 @@ class DQNRunner(object):
             (2e6, 5e-5)
             ], outside_value=5e-5,
         )
-        
-        self.n_foods = PiecewiseSchedule(
-            [
-            (0, 20), 
-            (2e5, 10),
-            (5e5, 3)
-            ], outside_value=3,
-        )
+
         self.replay_buffer1 = ReplayBuffer(buffer_size, frame_stack, lander=False)
         self.replay_buffer2 = ReplayBuffer(buffer_size, frame_stack, lander=False)
-        self.agent = DQNAgent(obs_space, act_space, frame_stack)
+        with tf.variable_scope('agent1'):
+            self.agent1 = DQNAgent(obs_space, act_space, frame_stack)
+        with tf.variable_scope('agent2'):
+            self.agent2 = DQNAgent(obs_space, act_space, frame_stack)
         self.done1, self.done2 = False, False
 
     def _run_one_step(self, logger):
         if not self.done1:
-            idx1 = self.replay_buffer1.store_frame(self.obs[0])
+            idx1 = self.replay_buffer1.store_frame(self.obs)
             epsilon1 = self.exploration.value(self.t1)
             if np.random.random() < epsilon1:
                 act1 = self.env.action_space[0].sample()
             else:
-                act1 = self.agent.select_action(self.replay_buffer1.encode_recent_observation()[None, :])
+                act1 = self.agent1.select_action(self.replay_buffer1.encode_recent_observation()[None, :])
         else:
             act1 = self.env.action_space[0].sample()
 
         if not self.done2:
-            idx2 = self.replay_buffer2.store_frame(self.obs[1])
+            idx2 = self.replay_buffer2.store_frame(self.obs)
             epsilon2 = self.exploration.value(self.t2)
             if np.random.random() < epsilon2:
                 act2 = self.env.action_space[1].sample()
             else:
-                act2 = self.agent.select_action(self.replay_buffer2.encode_recent_observation()[None, :])
+                act2 = self.agent2.select_action(self.replay_buffer2.encode_recent_observation()[None, :])
         else:
             act2 = self.env.action_space[1].sample()
 
@@ -265,8 +260,6 @@ class DQNRunner(object):
         if self.done1 and self.done2: #or self.ep_len == self.max_ep_len:
             logger.store(EpRet1=self.ep_r1, EpLen1=self.ep_len1)
             logger.store(EpRet2=self.ep_r2, EpLen2=self.ep_len2)
-            foods = self.n_foods.value(max(self.t1, self.t2))
-            self.env.env.n_foods = int(foods)
             self.obs = self.env.reset()
             self.done1, self.done2 = False, False
             self.ep_len1, self.ep_r1 = 0, 0
@@ -279,17 +272,17 @@ class DQNRunner(object):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer1.sample(self.batch_size)
             lr = self.lr_schedule.value(self.t1)
             feed_dict = {
-                self.agent.obs_ph: obs_batch,
-                self.agent.act_ph: act_batch,
-                self.agent.rew_ph: rew_batch,
-                self.agent.next_obs_ph: next_obs_batch,
-                self.agent.done_ph: done_batch,
-                self.agent.lr_ph: lr,
+                self.agent1.obs_ph: obs_batch,
+                self.agent1.act_ph: act_batch,
+                self.agent1.rew_ph: rew_batch,
+                self.agent1.next_obs_ph: next_obs_batch,
+                self.agent1.done_ph: done_batch,
+                self.agent1.lr_ph: lr,
             }
-            loss = self.agent.train_q(feed_dict)
+            loss = self.agent1.train_q(feed_dict)
             logger.store(Loss1=loss)
             if self.learning_step1 % self.target_update_freq == 0:
-                self.agent.update_target(feed_dict)
+                self.agent1.update_target(feed_dict)
             self.learning_step1 += 1
         
         if (self.t2 > self.start_learn and \
@@ -298,17 +291,17 @@ class DQNRunner(object):
             obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self.replay_buffer2.sample(self.batch_size)
             lr = self.lr_schedule.value(self.t2)
             feed_dict = {
-                self.agent.obs_ph: obs_batch,
-                self.agent.act_ph: act_batch,
-                self.agent.rew_ph: rew_batch,
-                self.agent.next_obs_ph: next_obs_batch,
-                self.agent.done_ph: done_batch,
-                self.agent.lr_ph: lr,
+                self.agent2.obs_ph: obs_batch,
+                self.agent2.act_ph: act_batch,
+                self.agent2.rew_ph: rew_batch,
+                self.agent2.next_obs_ph: next_obs_batch,
+                self.agent2.done_ph: done_batch,
+                self.agent2.lr_ph: lr,
             }
-            loss = self.agent.train_q(feed_dict)
+            loss = self.agent2.train_q(feed_dict)
             logger.store(Loss2=loss)
             if self.learning_step2 % self.target_update_freq == 0:
-                self.agent.update_target(feed_dict)
+                self.agent2.update_target(feed_dict)
             self.learning_step2 += 1
             
     def _run_train_phase(self, logger):
@@ -331,11 +324,11 @@ class DQNRunner(object):
         for step in range(epoch_len):
             if render: self.env.render()
             if not done1:
-                self.replay_buffer1.store_frame(obs[0])
+                self.replay_buffer1.store_frame(obs)
             if not done2:
-                self.replay_buffer2.store_frame(obs[1])
-            act1 = self.agent.select_action(self.replay_buffer1.encode_recent_observation()[None, :])
-            act2 = self.agent.select_action(self.replay_buffer2.encode_recent_observation()[None, :])
+                self.replay_buffer2.store_frame(obs)
+            act1 = self.agent1.select_action(self.replay_buffer1.encode_recent_observation()[None, :])
+            act2 = self.agent2.select_action(self.replay_buffer2.encode_recent_observation()[None, :])
             next_obs, reward, done, info = self.env.step((act1, act2))
             time.sleep(0.1)
             if not done1:
@@ -351,7 +344,7 @@ class DQNRunner(object):
             if done1 and done2: #or ep_len == self.max_ep_len:
                 logger.store(TestEpRet1=ep_r1, TestEpLen1=ep_len1)
                 logger.store(TestEpRet2=ep_r2, TestEpLen2=ep_len2)
-                self.env.env.n_foods = 20
+
                 obs = self.env.reset()
                 done1, done2 = False, False
                 ep_r1, ep_len1 = 0, 0
@@ -362,7 +355,8 @@ class DQNRunner(object):
         start_time = time.time()
         for epoch in range(1, self.epochs + 1):
             self._run_train_phase(logger)
-            self.agent.save_model(self.checkpoints_dir, epoch)
+            self.agent1.save_model(self.checkpoints_dir, epoch, 1)
+            self.agent2.save_model(self.checkpoints_dir, epoch, 2)
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet1', with_min_and_max=True)
             logger.log_tabular('EpLen1', average_only=True)
@@ -380,7 +374,6 @@ class DQNRunner(object):
             logger.log_tabular('Exploration1', self.exploration.value(self.t1))
             logger.log_tabular('LearningRate2', self.lr_schedule.value(self.t2))
             logger.log_tabular('Exploration2', self.exploration.value(self.t2))
-            logger.log_tabular('FOODSNUM', self.env.env.n_foods)
             logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
@@ -388,7 +381,8 @@ class DQNRunner(object):
     def run_test_and_render(self):
         """Load the saved model and test it."""
         logger = EpochLogger()
-        self.agent.load_model(self.checkpoints_dir)
+        self.agent1.load_model(self.checkpoints_dir, 1)
+        self.agent2.load_model(self.checkpoints_dir, 2)
         for epoch in range(self.epochs):
             self.run_test_phase(self.test_epoch_len, logger, render=True)
             logger.log_tabular('Epoch', epoch+1)
@@ -409,6 +403,7 @@ if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
     
     runner = DQNRunner(args.env_name, args.seed, logger_kwargs=logger_kwargs)
+
     if args.test:
         runner.run_test_and_render()
     else:
