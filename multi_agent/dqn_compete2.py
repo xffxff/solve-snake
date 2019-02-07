@@ -183,8 +183,8 @@ class DQNRunner(object):
         np.random.seed(seed)
         self.env.seed(seed)
 
-        obs_space = self.env.observation_space[0]
-        act_space = self.env.action_space[0]
+        obs_space = self.env.observation_space.spaces[0]
+        act_space = self.env.action_space.spaces[0]
 
         self.max_ep_len = 1000 #self.env.spec.timestep_limit
 
@@ -213,8 +213,8 @@ class DQNRunner(object):
         self.n_foods = PiecewiseSchedule(
             [
             (0, 20), 
-            (2e5, 10),
-            (5e5, 3)
+            (3e5, 10),
+            (6e5, 3)
             ], outside_value=3,
         )
         self.replay_buffer1 = ReplayBuffer(buffer_size, frame_stack, lander=False)
@@ -227,21 +227,21 @@ class DQNRunner(object):
             idx1 = self.replay_buffer1.store_frame(self.obs[0])
             epsilon1 = self.exploration.value(self.t1)
             if np.random.random() < epsilon1:
-                act1 = self.env.action_space[0].sample()
+                act1 = self.env.action_space.spaces[0].sample()
             else:
                 act1 = self.agent.select_action(self.replay_buffer1.encode_recent_observation()[None, :])
         else:
-            act1 = self.env.action_space[0].sample()
+            act1 = self.env.action_space.spaces[0].sample()
 
         if not self.done2:
             idx2 = self.replay_buffer2.store_frame(self.obs[1])
             epsilon2 = self.exploration.value(self.t2)
             if np.random.random() < epsilon2:
-                act2 = self.env.action_space[1].sample()
+                act2 = self.env.action_space.spaces[1].sample()
             else:
                 act2 = self.agent.select_action(self.replay_buffer2.encode_recent_observation()[None, :])
         else:
-            act2 = self.env.action_space[1].sample()
+            act2 = self.env.action_space.spaces[1].sample()
 
         next_obs, rew, done, info = self.env.step((act1, act2))
 
@@ -408,7 +408,6 @@ if __name__ == '__main__':
 
     tf.logging.set_verbosity(tf.logging.INFO)
     
-    args.test = True
     runner = DQNRunner(args.env_name, args.seed, logger_kwargs=logger_kwargs)
     if args.test:
         runner.run_test_and_render()
