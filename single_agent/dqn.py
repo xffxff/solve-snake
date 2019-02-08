@@ -17,8 +17,8 @@ from utils.wrappers import DistanceReward, WrapFrame
 
 def create_env(env_name):
     env = gym.make(env_name)    
-    env = DistanceReward(env)
-    env = TimeLimit(env, max_episode_steps=1000)
+    # env = DistanceReward(env)
+    # env = TimeLimit(env, max_episode_steps=1000)
     env = WrapFrame(env)
     return env
 
@@ -185,8 +185,9 @@ class DQNRunner(object):
         obs_space = self.env.observation_space
         act_space = self.env.action_space
 
-        self.max_ep_len = self.env.spec.timestep_limit
+        self.max_ep_len = 1000#self.env.spec.timestep_limit
 
+        self.env.set_foods(10)
         self.obs = self.env.reset()
         self.ep_len, self.ep_r = 0, 0
         self.t = 0
@@ -226,6 +227,7 @@ class DQNRunner(object):
         self.obs = next_obs
         if done or self.ep_len == self.max_ep_len:
             logger.store(EpRet=self.ep_r, EpLen=self.ep_len)
+            self.env.set_foods(10)
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
 
@@ -313,7 +315,7 @@ class DQNRunner(object):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='Snake-v0')
+    parser.add_argument('--env_name', type=str, default='Snake-rgb-v0')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
