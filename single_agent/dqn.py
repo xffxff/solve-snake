@@ -274,6 +274,7 @@ class DQNRunner(object):
         """
 
         ep_r, ep_len = 0, 0
+        self.env.set_foods(1)
         obs = self.env.reset()
         for step in range(epoch_len):
             if render: self.env.render()
