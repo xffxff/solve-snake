@@ -208,6 +208,14 @@ class DQNRunner(object):
             ], outside_value=5e-5,
         )
 
+        self.n_foods = PiecewiseSchedule(
+            [
+                (0, 10),
+                (5e5, 5),
+                (1e6, 1)
+            ], outside_value=1
+        )
+
         self.replay_buffer = ReplayBuffer(buffer_size, frame_stack, lander=False)
         self.agent = DQNAgent(obs_space, act_space, frame_stack)
 
@@ -227,7 +235,7 @@ class DQNRunner(object):
         self.obs = next_obs
         if done or self.ep_len == self.max_ep_len:
             logger.store(EpRet=self.ep_r, EpLen=self.ep_len)
-            self.env.set_foods(10)
+            self.env.set_foods(int(self.n_foods.value(self.t)))
             self.obs = self.env.reset()
             self.ep_len, self.ep_r = 0, 0
 
@@ -298,6 +306,7 @@ class DQNRunner(object):
                 logger.log_tabular('Loss', 0)
             logger.log_tabular('LearningRate', self.lr_schedule.value(self.t))
             logger.log_tabular('Exploration', self.exploration.value(self.t))
+            logger.log_tabular('NFoods', int(self.n_foods.value(self.t)))
             logger.log_tabular('TotalEnvInteracts', epoch * self.train_epoch_len)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
