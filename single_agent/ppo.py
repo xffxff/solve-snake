@@ -103,8 +103,8 @@ class Net(object):
         # x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
         # x = layers.flatten(x)
         # return layers.dense(x, units=512, activation=tf.nn.relu)
-        x = layers.dense(x, units=300, activation=tf.nn.tanh)
-        return layers.dense(x, units=400, activation=tf.nn.tanh)
+        x = layers.dense(x, units=64, activation=tf.nn.tanh)
+        return layers.dense(x, units=64, activation=tf.nn.tanh)
     
     def output(self):
         return self.val, self.dist, self.old_dist
@@ -127,7 +127,7 @@ class Agent(object):
         self.act = self.dist.sample()
 
         self.pi = self.dist.prob(self.act_ph)
-        self.old_pi = self.old_dist.prob(self.act_ph)
+        self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
 
         ratio = self.pi / self.old_pi
         min_adv = tf.where(self.adv_ph > 0, (1 + clip_ratio) * self.adv_ph, (1 - clip_ratio) * self.adv_ph)
@@ -208,7 +208,6 @@ class Runner(object):
         self.env = SubprocVecEnv([make_env(i) for i in range(n_env)])
         # self.env = VecFrameStack(self.env, 2)
 
-        self.max_traj = 200
         self.obs = self.env.reset()
 
         obs_space = self.env.observation_space
