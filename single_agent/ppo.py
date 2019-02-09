@@ -256,7 +256,7 @@ class Runner(object):
             kl, entropy = self.agent.get_kl(feed_dict)
             logger.store(KL=kl, Entropy=entropy)
             if kl > 1.5 * self.dtarg:
-                logger.log(f'Early stopping at step {i} due to reaching max kl.')
+                logger.log('Early stopping at step {} due to reaching max kl.'.format(i))
                 break
             pi_loss = self.agent.update_pi_params(feed_dict)
             logger.store(PiLoss=pi_loss)
