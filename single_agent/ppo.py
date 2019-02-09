@@ -10,15 +10,16 @@ from baselines.common.atari_wrappers import WarpFrame
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from utils.logx import EpochLogger
+from utils.dqn_utils import PiecewiseSchedule
 import time
 
 
 def make_env(seed):
     def _thunk():
-        env = gym.make('CartPole-v0')
+        env = gym.make('Snake-rgb-v0')
         env.seed(seed)
         env = LogWrapper(env)
-        # env = WarpFrame(env)
+        env = WarpFrame(env)
         return env
     return _thunk
 
@@ -32,14 +33,25 @@ class LogWrapper(gym.Wrapper):
 
         self.ep_rew = 0.
         self.ep_len = 0
+        self.t = 0
+
+        self.foods = PiecewiseSchedule(
+            [
+                (0, 15),
+                (1e5, 8),
+                (2e5, 1)
+            ],outside_value=1
+        )
 
     def reset(self):
+        self.env.set_foods(int(self.foods.value(self.t)))        
         return self.env.reset()
 
     def step(self, action):
         obs, rew, done, info = self.env.step(action)
         self.ep_rew += rew
         self.ep_len += 1
+        self.t += 1
         if done:
             info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len}
             self.ep_len, self.ep_rew = 0, 0.
@@ -98,13 +110,13 @@ class Net(object):
             self.val = layers.dense(x, units=1)
 
     def _cnn(self, x):
-        # x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        # x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        # x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
-        # x = layers.flatten(x)
-        # return layers.dense(x, units=512, activation=tf.nn.relu)
-        x = layers.dense(x, units=64, activation=tf.nn.tanh)
-        return layers.dense(x, units=64, activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        x = layers.flatten(x)
+        return layers.dense(x, units=512, activation=tf.nn.relu)
+        # x = layers.dense(x, units=64, activation=tf.nn.tanh)
+        # return layers.dense(x, units=64, activation=tf.nn.tanh)
     
     def output(self):
         return self.val, self.dist, self.old_dist
@@ -206,7 +218,7 @@ class Runner(object):
         tf.set_random_seed(seed)
         np.random.seed(seed)
         self.env = SubprocVecEnv([make_env(i) for i in range(n_env)])
-        # self.env = VecFrameStack(self.env, 2)
+        self.env = VecFrameStack(self.env, 2)
 
         self.obs = self.env.reset()
 
@@ -278,7 +290,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from utils.run_utils  import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(args.exp_name, 'cartpole', args.seed)
+    logger_kwargs = setup_logger_kwargs(args.exp_name, 'Snake-rgb-v0', args.seed)
 
     runner = Runner(args.epochs ,args.n_env, args.seed, logger_kwargs=logger_kwargs)
     runner.run_experiment()
