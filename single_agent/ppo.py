@@ -12,17 +12,21 @@ from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from utils.dqn_utils import PiecewiseSchedule
 from utils.logx import EpochLogger
+from gym.wrappers import TimeLimit
 
 
-def make_env(seed):
-    def _thunk():
-        env = gym.make('Snake-rgb-v0')
-        env.seed(seed)
-        env = LogWrapper(env)
-        env = WarpFrame(env)
-        return env
-    return _thunk
-
+def create_env(n_env, seed):
+    def make_env(rank):
+        def _thunk():
+            env = gym.make('Snake-rgb-v0')
+            env.seed(seed + rank)
+            env = LogWrapper(env)
+            env = TimeLimit(env, max_episode_steps=1000)
+            env = WarpFrame(env)
+            return env
+        return _thunk
+    env = SubprocVecEnv([make_env(i) for i in range(n_env)])
+    return VecFrameStack(env, 2)
 
 class LogWrapper(gym.Wrapper):
 
@@ -53,14 +57,9 @@ class LogWrapper(gym.Wrapper):
         self.ep_len += 1
         self.t += 1
         if done:
-            info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len}
+            info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len, 'foods': int(self.foods.value(self.t))}
             self.ep_len, self.ep_rew = 0, 0.
         return obs, rew, done, info
-    
-    @classmethod
-    def get_foods_num(cls):
-        return int(cls.foods.value(cls.t))
-
 
 class Buffer(object):
 
@@ -221,8 +220,7 @@ class Runner(object):
         
         tf.set_random_seed(seed)
         np.random.seed(seed)
-        self.env = SubprocVecEnv([make_env(i) for i in range(n_env)])
-        self.env = VecFrameStack(self.env, 2)
+        self.env = create_env(n_env, seed)
 
         self.obs = self.env.reset()
 
@@ -244,6 +242,7 @@ class Runner(object):
                 if info.get('ep_r'):
                     logger.store(EpRet=info.get('ep_r'))
                     logger.store(EpLen=info.get('ep_len'))
+                    logger.store(NFoods=info.get('foods'))
         last_val = self.agent.get_val(self.obs)
         return last_val
 
@@ -251,14 +250,12 @@ class Runner(object):
         start_time = time.time()
         last_val = self._collect_rollouts(logger)
         obs_buf, act_buf, ret_buf, adv_buf = self.buffer.get(last_val)
-        print(obs_buf.shape, act_buf.shape, ret_buf.shape, adv_buf.shape)
         feed_dict = {
             self.agent.obs_ph: obs_buf,
             self.agent.act_ph: act_buf,
             self.agent.ret_ph: ret_buf,
             self.agent.adv_ph: adv_buf,
         }
-        print('collect_rollouts cost: ', time.time() - start_time)
 
         for i in range(self.train_pi_iters):
             kl, entropy = self.agent.get_kl(feed_dict)
@@ -268,11 +265,9 @@ class Runner(object):
                 break
             pi_loss = self.agent.update_pi_params(feed_dict)
             logger.store(PiLoss=pi_loss)
-        start_time = time.time()
         for i in range(self.train_v_iters):
             v_loss = self.agent.update_v_params(feed_dict)
             logger.store(VLoss=v_loss)
-        print(time.time() - start_time)
         self.agent.sync_old_pi_params()
 
     
@@ -284,6 +279,7 @@ class Runner(object):
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('NFoods', average_only=True)
             logger.log_tabular('Val', average_only=True)
             logger.log_tabular('KL', average_only=True)
             logger.log_tabular('Entropy', average_only=True)
