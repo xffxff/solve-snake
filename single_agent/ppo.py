@@ -14,6 +14,9 @@ from utils.dqn_utils import PiecewiseSchedule
 from utils.logx import EpochLogger
 from gym.wrappers import TimeLimit
 
+import os.path as osp 
+from utils.checkpointer import get_latest_check_num
+
 
 def create_env(n_env, seed):
     def make_env(rank):
@@ -27,6 +30,7 @@ def create_env(n_env, seed):
         return _thunk
     env = SubprocVecEnv([make_env(i) for i in range(n_env)])
     return VecFrameStack(env, 2)
+
 
 class LogWrapper(gym.Wrapper):
 
@@ -60,6 +64,7 @@ class LogWrapper(gym.Wrapper):
             info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len, 'foods': int(self.foods.value(self.t))}
             self.ep_len, self.ep_rew = 0, 0.
         return obs, rew, done, info
+
 
 class Buffer(object):
 
@@ -163,6 +168,8 @@ class Agent(object):
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
         self.sync_old_pi_params()
+
+        self.saver = tf.train.Saver(max_to_keep=3)
     
     def _create_placeholders(self):
         self.obs_ph = tf.placeholder(tf.float32, shape=[None] + list(self.obs_space.shape))
@@ -196,6 +203,13 @@ class Agent(object):
     def get_kl(self, feed_dict):
         return self.sess.run([self.kl, self.entropy], feed_dict)
 
+    def save_model(self, checkpoints_dir, epoch):
+        self.saver.save(self.sess, osp.join(checkpoints_dir, 'tf_ckpt'), global_step=epoch)
+    
+    def load_model(self, checkpoints_dir):
+        latest_model = get_latest_check_num(checkpoints_dir)
+        self.saver.restore(self.sess, osp.join(checkpoints_dir, 'tf_ckpt-{}'.format(latest_model)))
+
 
 class Runner(object):
 
@@ -206,6 +220,7 @@ class Runner(object):
                  gamma=0.99,
                  lam=0.95,
                  train_epoch_len=500,
+                 test_epoch_len=2000,
                  dtarg=0.01,
                  train_pi_iters=80,
                  train_v_iters=80,
@@ -213,10 +228,13 @@ class Runner(object):
 
         self.epochs = epochs
         self.train_epoch_len = train_epoch_len
+        self.test_epoch_len = test_epoch_len
         self.dtarg = dtarg
         self.train_pi_iters = train_pi_iters
         self.train_v_iters = train_v_iters
         self.logger_kwargs = logger_kwargs
+
+        self.checkpoints_dir = self.logger_kwargs['output_dir'] + '/checkpoints'
         
         tf.set_random_seed(seed)
         np.random.seed(seed)
@@ -269,16 +287,16 @@ class Runner(object):
             v_loss = self.agent.update_v_params(feed_dict)
             logger.store(VLoss=v_loss)
         self.agent.sync_old_pi_params()
-
     
     def run_experiment(self):
         start_time = time.time()
         logger = EpochLogger(**self.logger_kwargs)
-        for epoch in range(self.epochs):
+        for epoch in range(1, self.epochs + 1):
             self._run_train_phase(logger)
-            logger.log_tabular('Epoch', epoch+1)
+            self.agent.save_model(self.checkpoints_dir, epoch)
+            logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('EpLen', with_min_and_max=True)
             logger.log_tabular('NFoods', average_only=True)
             logger.log_tabular('Val', average_only=True)
             logger.log_tabular('KL', average_only=True)
@@ -288,6 +306,31 @@ class Runner(object):
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
+    def _run_test_phase(self, logger, render=True):
+        env = create_env(1, 0)
+        ep_r, ep_len = 0, 0
+        obs = env.reset()
+        for step in range(self.test_epoch_len):
+            if render: env.render()
+            act = self.agent.select_action(obs)
+            next_obs, reward, done, info = env.step(act)
+            time.sleep(0.1)
+            ep_r += reward
+            ep_len += 1
+            obs = next_obs
+            
+            if done:
+                logger.store(TestEpRet=ep_r, TestEpLen=ep_len)
+
+                obs = env.reset()
+                ep_r, ep_len = 0, 0
+
+    def run_test_and_render(self):
+        logger = EpochLogger()
+        self.agent.load_model(self.checkpoints_dir)
+        for epoch in range(1, self.epochs + 1):
+            self._run_test_phase(logger)
+
 
 if __name__ == "__main__":
     import argparse
@@ -296,10 +339,14 @@ if __name__ == "__main__":
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--n_env', '-n', type=int, default=8)
     parser.add_argument('--exp_name', type=str, default='ppo')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     from utils.run_utils  import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, 'Snake-rgb-v0', args.seed)
 
     runner = Runner(args.epochs ,args.n_env, args.seed, logger_kwargs=logger_kwargs)
-    runner.run_experiment()
+    if args.test:
+        runner.run_test_and_render()
+    else:
+        runner.run_experiment()
