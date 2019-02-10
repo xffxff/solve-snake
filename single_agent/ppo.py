@@ -18,13 +18,12 @@ import os.path as osp
 from utils.checkpointer import get_latest_check_num
 
 
-def create_env(n_env, seed):
+def create_env(n_env, seed, test=False):
     def make_env(rank):
         def _thunk():
-            env = gym.make('Snake-rgb-v0')
+            env = gym.make('Snake-rgb-v1')
             env.seed(seed + rank)
-            env = LogWrapper(env)
-            env = TimeLimit(env, max_episode_steps=1000)
+            env = LogWrapper(env, test, max_episode_steps=1000)
             env = WarpFrame(env)
             return env
         return _thunk
@@ -34,10 +33,13 @@ def create_env(n_env, seed):
 
 class LogWrapper(gym.Wrapper):
 
-    def __init__(self, env):
+    def __init__(self, env, test=False, max_episode_steps=None):
         gym.Wrapper.__init__(self, env)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
+        
+        self.test = test
+        self.max_episode_steps = max_episode_steps
 
         self.ep_rew = 0.
         self.ep_len = 0
@@ -52,7 +54,8 @@ class LogWrapper(gym.Wrapper):
         )
 
     def reset(self):
-        self.env.set_foods(int(self.foods.value(self.t)))        
+        if not self.test:
+            self.env.set_foods(int(self.foods.value(self.t)))        
         return self.env.reset()
 
     def step(self, action):
@@ -60,6 +63,8 @@ class LogWrapper(gym.Wrapper):
         self.ep_rew += rew
         self.ep_len += 1
         self.t += 1
+        if self.ep_len == self.max_episode_steps:
+            done = True
         if done:
             info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len, 'foods': int(self.foods.value(self.t))}
             self.ep_len, self.ep_rew = 0, 0.
@@ -95,6 +100,7 @@ class Buffer(object):
             ret_buf[i] = last_ret =  rew_buf[i] + self.gamma * last_ret * (1 - done_buf[i])
         obs_buf, act_buf, ret_buf, adv_buf = map(self.swap_and_flatten, (obs_buf, act_buf, ret_buf, adv_buf))
         self.obs_buf, self.act_buf, self.rew_buf, self.done_buf, self.val_buf = [], [], [], [], []
+        adv_buf = (adv_buf - np.mean(adv_buf)) / np.std(adv_buf)
         return obs_buf, act_buf, ret_buf, adv_buf
     
     def swap_and_flatten(self, arr):
@@ -307,7 +313,7 @@ class Runner(object):
             logger.dump_tabular()
 
     def _run_test_phase(self, logger, render=True):
-        env = create_env(1, 0)
+        env = create_env(1, 0, test=True)
         ep_r, ep_len = 0, 0
         obs = env.reset()
         for step in range(self.test_epoch_len):
