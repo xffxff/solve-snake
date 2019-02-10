@@ -38,8 +38,8 @@ class LogWrapper(gym.Wrapper):
         self.foods = PiecewiseSchedule(
             [
                 (0, 15),
-                (1e5, 8),
-                (2e5, 1)
+                (2e4, 8),
+                (1e5, 1)
             ],outside_value=1
         )
 
@@ -56,6 +56,10 @@ class LogWrapper(gym.Wrapper):
             info = {'ep_r': self.ep_rew, 'ep_len': self.ep_len}
             self.ep_len, self.ep_rew = 0, 0.
         return obs, rew, done, info
+    
+    # @staticmethod
+    # def get_foods_num(t):
+        
 
 
 class Buffer(object):
@@ -110,11 +114,11 @@ class Net(object):
             self.val = tf.squeeze(layers.dense(x, units=1))
 
     def _cnn(self, x):
-        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.tanh)
         x = layers.flatten(x)
-        return layers.dense(x, units=512, activation=tf.nn.relu)
+        return layers.dense(x, units=512, activation=tf.nn.tanh)
     
     def output(self):
         return self.val, self.dist, self.old_dist
@@ -200,7 +204,7 @@ class Runner(object):
                  seed,
                  gamma=0.99,
                  lam=0.95,
-                 train_epoch_len=1000,
+                 train_epoch_len=500,
                  dtarg=0.01,
                  train_pi_iters=80,
                  train_v_iters=80,
@@ -292,7 +296,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--n_env', '-n', type=int, default=4)
+    parser.add_argument('--n_env', '-n', type=int, default=8)
     parser.add_argument('--exp_name', type=str, default='ppo')
     args = parser.parse_args()
 
