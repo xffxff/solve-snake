@@ -3,7 +3,6 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-# from stable_baselines.ppo2.ppo2 import PPO2
 from tensorflow import layers
 from tensorflow.distributions import Categorical
 
@@ -17,10 +16,10 @@ from utils.logx import EpochLogger
 
 def make_env(seed):
     def _thunk():
-        env = gym.make('CartPole-v0')
+        env = gym.make('Snake-rgb-v0')
         env.seed(seed)
         env = LogWrapper(env)
-        # env = WarpFrame(env)
+        env = WarpFrame(env)
         return env
     return _thunk
 
@@ -36,16 +35,16 @@ class LogWrapper(gym.Wrapper):
         self.ep_len = 0
         self.t = 0
 
-        # self.foods = PiecewiseSchedule(
-        #     [
-        #         (0, 15),
-        #         (1e5, 8),
-        #         (2e5, 1)
-        #     ],outside_value=1
-        # )
+        self.foods = PiecewiseSchedule(
+            [
+                (0, 15),
+                (1e5, 8),
+                (2e5, 1)
+            ],outside_value=1
+        )
 
     def reset(self):
-        # self.env.set_foods(int(self.foods.value(self.t)))        
+        self.env.set_foods(int(self.foods.value(self.t)))        
         return self.env.reset()
 
     def step(self, action):
@@ -81,7 +80,7 @@ class Buffer(object):
         done_buf = np.asarray(self.done_buf, dtype=np.bool)
         val_buf = np.asarray(self.val_buf, dtype=np.float32)
         adv_buf, ret_buf = np.zeros_like(rew_buf), np.zeros_like(rew_buf)
-        last_gae_lam, last_ret = 0, 0
+        last_gae_lam, last_ret = 0, last_val
         for i in reversed(range(len(self.rew_buf))):
             delta = rew_buf[i] + self.gamma * val_buf[i+1] * (1 - done_buf[i]) - val_buf[i]
             adv_buf[i] = last_gae_lam = delta + self.gamma * self.lam * (1 - done_buf[i]) * last_gae_lam
@@ -111,13 +110,11 @@ class Net(object):
             self.val = tf.squeeze(layers.dense(x, units=1))
 
     def _cnn(self, x):
-        # x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        # x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        # x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
-        # x = layers.flatten(x)
-        # return layers.dense(x, units=512, activation=tf.nn.relu)
-        x = layers.dense(x, units=64, activation=tf.nn.tanh)
-        return layers.dense(x, units=64, activation=tf.nn.tanh)
+        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        x = layers.flatten(x)
+        return layers.dense(x, units=512, activation=tf.nn.relu)
     
     def output(self):
         return self.val, self.dist, self.old_dist
@@ -129,8 +126,8 @@ class Agent(object):
                  obs_space,
                  act_space,
                  clip_ratio=0.2,
-                 pi_lr=0.001,
-                 v_lr=0.001):
+                 pi_lr=0.0001,
+                 v_lr=0.0001):
         self.obs_space = obs_space
         self.act_space = act_space
 
@@ -219,7 +216,7 @@ class Runner(object):
         tf.set_random_seed(seed)
         np.random.seed(seed)
         self.env = SubprocVecEnv([make_env(i) for i in range(n_env)])
-        # self.env = VecFrameStack(self.env, 2)
+        self.env = VecFrameStack(self.env, 2)
 
         self.obs = self.env.reset()
 
