@@ -43,7 +43,7 @@ class LogWrapper(gym.Wrapper):
             [
                 (0, 15),
                 (2e4, 8),
-                (1e5, 1)
+                (8e4, 1)
             ],outside_value=1
         )
 
