@@ -57,9 +57,9 @@ class LogWrapper(gym.Wrapper):
             self.ep_len, self.ep_rew = 0, 0.
         return obs, rew, done, info
     
-    # @staticmethod
-    # def get_foods_num(t):
-        
+    @classmethod
+    def get_foods_num(cls):
+        return int(cls.foods.value(cls.t))
 
 
 class Buffer(object):
@@ -130,6 +130,7 @@ class Agent(object):
                  obs_space,
                  act_space,
                  clip_ratio=0.2,
+                 ent_coef=0.01,
                  pi_lr=0.0001,
                  v_lr=0.0001):
         self.obs_space = obs_space
@@ -143,9 +144,12 @@ class Agent(object):
         self.pi = self.dist.prob(self.act_ph)
         self.old_pi = tf.stop_gradient(self.old_dist.prob(self.act_ph))
 
+        self.kl = tf.reduce_mean(self.old_dist.kl_divergence(self.dist))
+        self.entropy = tf.reduce_mean(self.dist.entropy())
+
         ratio = self.pi / self.old_pi
         min_adv = tf.where(self.adv_ph > 0, (1 + clip_ratio) * self.adv_ph, (1 - clip_ratio) * self.adv_ph)
-        self.pi_loss = - tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv))
+        self.pi_loss = - tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv)) - ent_coef * self.entropy
         self.v_loss = tf.reduce_mean((self.ret_ph - self.val)**2)
 
         self.train_pi = tf.train.AdamOptimizer(pi_lr).minimize(self.pi_loss)
@@ -156,8 +160,6 @@ class Agent(object):
         self.sync_old_pi_params_op = tf.group([tf.assign(old_params, params)\
                                                 for old_params, params in zip(self.old_pi_params, self.pi_params)])
 
-        self.kl = tf.reduce_mean(self.old_dist.kl_divergence(self.dist))
-        self.entropy = tf.reduce_mean(self.dist.entropy())
 
         self.sess = tf.Session()
         self.sess.run(tf.global_variables_initializer())
@@ -294,7 +296,7 @@ class Runner(object):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--n_env', '-n', type=int, default=8)
     parser.add_argument('--exp_name', type=str, default='ppo')
