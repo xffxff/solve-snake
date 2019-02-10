@@ -1,25 +1,26 @@
-import gym
-import snake_gym
-import numpy as np 
-import tensorflow as tf 
-from tensorflow import layers
-from tensorflow.distributions import Categorical 
-from stable_baselines.ppo2.ppo2 import PPO2
+import time
 
+import gym
+import numpy as np
+import tensorflow as tf
+# from stable_baselines.ppo2.ppo2 import PPO2
+from tensorflow import layers
+from tensorflow.distributions import Categorical
+
+import snake_gym
 from baselines.common.atari_wrappers import WarpFrame
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
-from utils.logx import EpochLogger
 from utils.dqn_utils import PiecewiseSchedule
-import time
+from utils.logx import EpochLogger
 
 
 def make_env(seed):
     def _thunk():
-        env = gym.make('Snake-rgb-v0')
+        env = gym.make('CartPole-v0')
         env.seed(seed)
         env = LogWrapper(env)
-        env = WarpFrame(env)
+        # env = WarpFrame(env)
         return env
     return _thunk
 
@@ -35,16 +36,16 @@ class LogWrapper(gym.Wrapper):
         self.ep_len = 0
         self.t = 0
 
-        self.foods = PiecewiseSchedule(
-            [
-                (0, 15),
-                (1e5, 8),
-                (2e5, 1)
-            ],outside_value=1
-        )
+        # self.foods = PiecewiseSchedule(
+        #     [
+        #         (0, 15),
+        #         (1e5, 8),
+        #         (2e5, 1)
+        #     ],outside_value=1
+        # )
 
     def reset(self):
-        self.env.set_foods(int(self.foods.value(self.t)))        
+        # self.env.set_foods(int(self.foods.value(self.t)))        
         return self.env.reset()
 
     def step(self, action):
@@ -107,16 +108,16 @@ class Net(object):
             self.old_dist = Categorical(logits=logits)
         with tf.variable_scope('v'):
             x = self._cnn(obs)
-            self.val = layers.dense(x, units=1)
+            self.val = tf.squeeze(layers.dense(x, units=1))
 
     def _cnn(self, x):
-        x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
-        x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
-        x = layers.flatten(x)
-        return layers.dense(x, units=512, activation=tf.nn.relu)
-        # x = layers.dense(x, units=64, activation=tf.nn.tanh)
-        # return layers.dense(x, units=64, activation=tf.nn.tanh)
+        # x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.relu)
+        # x = layers.conv2d(x, filters=64, kernel_size=4, strides=(2, 2), activation=tf.nn.relu)
+        # x = layers.conv2d(x, filters=64, kernel_size=3, strides=(1, 1), activation=tf.nn.relu)
+        # x = layers.flatten(x)
+        # return layers.dense(x, units=512, activation=tf.nn.relu)
+        x = layers.dense(x, units=64, activation=tf.nn.tanh)
+        return layers.dense(x, units=64, activation=tf.nn.tanh)
     
     def output(self):
         return self.val, self.dist, self.old_dist
@@ -177,7 +178,7 @@ class Agent(object):
 
     def get_val(self, obs):
         val = self.sess.run(self.val, feed_dict={self.obs_ph: obs})
-        return np.squeeze(val)
+        return val
 
     def update_pi_params(self, feed_dict):
         _, pi_loss = self.sess.run([self.train_pi, self.pi_loss], feed_dict=feed_dict)
@@ -218,7 +219,7 @@ class Runner(object):
         tf.set_random_seed(seed)
         np.random.seed(seed)
         self.env = SubprocVecEnv([make_env(i) for i in range(n_env)])
-        self.env = VecFrameStack(self.env, 2)
+        # self.env = VecFrameStack(self.env, 2)
 
         self.obs = self.env.reset()
 
@@ -232,6 +233,7 @@ class Runner(object):
         for step in range(self.train_epoch_len):
             acts = self.agent.select_action(self.obs)
             vals = self.agent.get_val(self.obs)
+            logger.store(Val=vals)
             next_obs, rews, dones, infos = self.env.step(acts)
             self.buffer.store(self.obs, acts, rews, dones, vals)
             self.obs = next_obs
@@ -243,14 +245,17 @@ class Runner(object):
         return last_val
 
     def _run_train_phase(self, logger):
+        start_time = time.time()
         last_val = self._collect_rollouts(logger)
         obs_buf, act_buf, ret_buf, adv_buf = self.buffer.get(last_val)
+        print(obs_buf.shape, act_buf.shape, ret_buf.shape, adv_buf.shape)
         feed_dict = {
             self.agent.obs_ph: obs_buf,
             self.agent.act_ph: act_buf,
             self.agent.ret_ph: ret_buf,
             self.agent.adv_ph: adv_buf,
         }
+        print('collect_rollouts cost: ', time.time() - start_time)
 
         for i in range(self.train_pi_iters):
             kl, entropy = self.agent.get_kl(feed_dict)
@@ -276,6 +281,11 @@ class Runner(object):
             logger.log_tabular('Epoch', epoch+1)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('Val', average_only=True)
+            logger.log_tabular('KL', average_only=True)
+            logger.log_tabular('Entropy', average_only=True)
+            logger.log_tabular('PiLoss', average_only=True)
+            logger.log_tabular('VLoss', average_only=True)
             logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
 
