@@ -21,7 +21,7 @@ cd snake-gym
 pip install -e .
 ```
 
-### Install [solve-snake]
+### Install solve-snake
 ```
 git clone https://github.com/XFFXFF/solve-snake.git
 cd solve-snake
