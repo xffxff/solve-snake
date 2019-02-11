@@ -14,14 +14,14 @@ cd baselines
 pip install -e .
 ```
 
-### Install snake env
+### Install [snake-gym](https://github.com/XFFXFF/snake-gym.git)
 ```
 git clone https://github.com/XFFXFF/snake-gym.git
 cd snake-gym
 pip install -e .
 ```
 
-### Install [solve-snake](https://github.com/XFFXFF/snake-gym.git)
+### Install [solve-snake]
 ```
 git clone https://github.com/XFFXFF/solve-snake.git
 cd solve-snake
@@ -29,7 +29,7 @@ pip install -e .
 ```
 
 ## Running Tests
-### Training a single agent model with ppo
+### Training a single agent model with dqn
 ```
-python single_agent/ppo.py
+python single_agent/dqn.py
 ```
