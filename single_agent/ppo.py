@@ -184,7 +184,8 @@ class Agent(object):
         self.ret_ph = tf.placeholder(tf.float32, shape=[None, ])    
 
     def _create_network(self):
-        net = Net(self.obs_ph, self.act_space)
+        obs_normal = tf.cast(self.obs_ph) / 255.0
+        net = Net(obs_normal, self.act_space)
         self.val, self.dist, self.old_dist = net.output()
     
     def select_action(self, obs):
@@ -349,7 +350,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from utils.run_utils  import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(args.exp_name, 'Snake-rgb-v0', args.seed)
+    logger_kwargs = setup_logger_kwargs(args.exp_name, 'Snake-rgb-v1', args.seed)
 
     runner = Runner(args.epochs ,args.n_env, args.seed, logger_kwargs=logger_kwargs)
     if args.test:
