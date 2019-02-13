@@ -65,7 +65,7 @@ class Runner(object):
         self.obs_space = self.env.observation_space
         self.act_space = self.env.action_space
 
-        self.obs_rms = RunningMeanStd(shape=[1]+list(self.obs_space.shape))
+        self.obs_rms = RunningMeanStd(shape=(84, 84, 1))
         self.rew_rms = RunningMeanStd()
         self.discount_rew = RewardForwardFilter(int_gamma)
         self.agent = Agent(self.obs_space, self.act_space)
@@ -84,12 +84,12 @@ class Runner(object):
             vals = self.agent.get_val(self.obs)
             logger.store(Val=vals)
             next_obs, rews, dones, infos = self.env.step(acts)
-            print(next_obs)
-            intrinsic_reward = self.agent.get_intrinsic_reward((next_obs[:, :, :, 1] - self.obs_rms.mean) / np.sqrt(self.obs_rms.var))
+            next_state = next_obs[:, :, :, 1][:, None]
+            intrinsic_reward = self.agent.get_intrinsic_reward((next_state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var))
             intrinsic_reward = np.clip(intrinsic_reward, -5, 5)
             rews = rews + intrinsic_reward
             self.buffer.store(self.obs, acts, rews, dones, vals)
-            self.obs_rms.update(next_obs[:, :, :, 1])
+            self.obs_rms.update(next_state)
             self.obs = next_obs
             for info in infos:
                 if info.get('ep_r'):
@@ -101,9 +101,10 @@ class Runner(object):
     def _run_train_phase(self, logger):
         start_time = time.time()
         last_val = self._collect_rollouts(logger)
-        obs_buf, act_buf, ret_buf, adv_buf = self.buffer.get(last_val)
+        obs_buf, state_buf, act_buf, ret_buf, adv_buf = self.buffer.get(last_val)
         feed_dict = {
             self.agent.obs_ph: obs_buf,
+            self.agent.state_ph: state_buf,
             self.agent.act_ph: act_buf,
             self.agent.ret_ph: ret_buf,
             self.agent.adv_ph: adv_buf,

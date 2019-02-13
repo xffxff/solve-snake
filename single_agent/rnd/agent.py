@@ -53,6 +53,7 @@ class Agent(object):
     
     def _create_placeholders(self):
         self.obs_ph = tf.placeholder(tf.float32, shape=[None] + list(self.obs_space.shape))
+        self.state_ph = tf.placeholder(tf.float32, shape=[None, 84, 84, 1])
         self.act_ph = tf.placeholder(tf.int32, shape=[None, ])
         self.adv_ph = tf.placeholder(tf.float32, shape=[None, ])
         self.ret_ph = tf.placeholder(tf.float32, shape=[None, ])    
@@ -61,7 +62,7 @@ class Agent(object):
         actor_critic = ActorCriticModel(self.obs_ph, self.act_space)
         self.val, self.dist, self.old_dist = actor_critic.output()
 
-        rnd = RNDModel(self.obs_ph)
+        rnd = RNDModel(self.state_ph)
         self.target, self.predict = rnd.output()
     
     def select_action(self, obs):
