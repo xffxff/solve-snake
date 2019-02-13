@@ -75,7 +75,7 @@ class Runner(object):
         for step in range(self.train_epoch_len):
             acts = np.random.randint(0, self.act_space.n, self.n_env)
             next_obs, _, _, _ = self.env.step(acts)
-            self.obs_rms.update(next_obs)
+            self.obs_rms.update(next_obs[:, :, :, 1])
         self.obs = self.env.reset()
     
     def _collect_rollouts(self, logger):
@@ -84,11 +84,12 @@ class Runner(object):
             vals = self.agent.get_val(self.obs)
             logger.store(Val=vals)
             next_obs, rews, dones, infos = self.env.step(acts)
-            intrinsic_reward = self.agent.get_intrinsic_reward((next_obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var))
+            print(next_obs)
+            intrinsic_reward = self.agent.get_intrinsic_reward((next_obs[:, :, :, 1] - self.obs_rms.mean) / np.sqrt(self.obs_rms.var))
             intrinsic_reward = np.clip(intrinsic_reward, -5, 5)
             rews = rews + intrinsic_reward
             self.buffer.store(self.obs, acts, rews, dones, vals)
-            self.obs_rms.update(next_obs)
+            self.obs_rms.update(next_obs[:, :, :, 1])
             self.obs = next_obs
             for info in infos:
                 if info.get('ep_r'):
