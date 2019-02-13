@@ -70,7 +70,7 @@ class Agent(object):
         return act
     
     def get_intrinsic_reward(self, next_obs):
-        target_rep, predict_rep = self.sess.run([self.target, self.predict], feed_dict={self.obs_ph: next_obs})
+        target_rep, predict_rep = self.sess.run([self.target, self.predict], feed_dict={self.state_ph: next_obs})
         intrinsic_reward = np.sum((target_rep - predict_rep)**2, axis=1)
         return intrinsic_reward
 

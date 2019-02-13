@@ -31,7 +31,7 @@ class Buffer(object):
         obs_buf, act_buf, ret_buf, adv_buf = map(self.swap_and_flatten, (obs_buf, act_buf, ret_buf, adv_buf))
         self.obs_buf, self.act_buf, self.rew_buf, self.done_buf, self.val_buf = [], [], [], [], []
         adv_buf = (adv_buf - np.mean(adv_buf)) / np.std(adv_buf)
-        state_buf = obs_buf[:, :, :, 1][:, None]
+        state_buf = obs_buf[:, :, :, 1][:, :, :, None]
         return obs_buf, state_buf, act_buf, ret_buf, adv_buf
     
     def swap_and_flatten(self, arr):
