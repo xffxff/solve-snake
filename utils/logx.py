@@ -11,7 +11,6 @@ import shutil
 import numpy as np
 import tensorflow as tf
 import os.path as osp, time, atexit, os
-from utils.mpi_tools import proc_id, mpi_statistics_scalar
 
 color2num = dict(
     gray=30,
@@ -38,32 +37,6 @@ def colorize(string, color, bold=False, highlight=False):
     if bold: attr.append('1')
     return '\x1b[%sm%s\x1b[0m' % (';'.join(attr), string)
 
-def restore_tf_graph(sess, fpath):
-    """
-    Loads graphs saved by Logger.
-
-    Will output a dictionary whose keys and values are from the 'inputs' 
-    and 'outputs' dict you specified with logger.setup_tf_saver().
-
-    Args:
-        sess: A Tensorflow session.
-        fpath: Filepath to save directory.
-
-    Returns:
-        A dictionary mapping from keys to tensors in the computation graph
-        loaded from ``fpath``. 
-    """
-    tf.saved_model.loader.load(
-                sess,
-                [tf.saved_model.tag_constants.SERVING],
-                fpath
-            )
-    model_info = joblib.load(osp.join(fpath, 'model_info.pkl'))
-    graph = tf.get_default_graph()
-    model = dict()
-    model.update({k: graph.get_tensor_by_name(v) for k,v in model_info['inputs'].items()})
-    model.update({k: graph.get_tensor_by_name(v) for k,v in model_info['outputs'].items()})
-    return model
 
 class Logger:
     """
@@ -92,18 +65,14 @@ class Logger:
                 hyperparameter configuration with multiple random seeds, you
                 should give them all the same ``exp_name``.)
         """
-        if proc_id()==0:
-            self.output_dir = output_dir or "/tmp/experiments/%i"%int(time.time())
-            if osp.exists(self.output_dir):
-                print("Warning: Log dir %s already exists! Storing info there anyway."%self.output_dir)
-            else:
-                os.makedirs(self.output_dir)
-            self.output_file = open(osp.join(self.output_dir, output_fname), 'w')
-            atexit.register(self.output_file.close)
-            print(colorize("Logging data to %s"%self.output_file.name, 'green', bold=True))
+        self.output_dir = output_dir or "/tmp/experiments/%i"%int(time.time())
+        if osp.exists(self.output_dir):
+            print("Warning: Log dir %s already exists! Storing info there anyway."%self.output_dir)
         else:
-            self.output_dir = None
-            self.output_file = None
+            os.makedirs(self.output_dir)
+        self.output_file = open(osp.join(self.output_dir, output_fname), 'w')
+        atexit.register(self.output_file.close)
+        print(colorize("Logging data to %s"%self.output_file.name, 'green', bold=True))
         self.first_row=True
         self.log_headers = []
         self.log_current_row = {}
@@ -111,8 +80,7 @@ class Logger:
 
     def log(self, msg, color='green'):
         """Print a colorized message to stdout."""
-        if proc_id()==0:
-            print(colorize(msg, color, bold=True))
+        print(colorize(msg, color, bold=True))
 
     def log_tabular(self, key, val):
         """
@@ -129,101 +97,6 @@ class Logger:
             assert key in self.log_headers, "Trying to introduce a new key %s that you didn't include in the first iteration"%key
         assert key not in self.log_current_row, "You already set %s this iteration. Maybe you forgot to call dump_tabular()"%key
         self.log_current_row[key] = val
-
-    # def save_config(self, config):
-    #     """
-    #     Log an experiment configuration.
-
-    #     Call this once at the top of your experiment, passing in all important
-    #     config vars as a dict. This will serialize the config to JSON, while
-    #     handling anything which can't be serialized in a graceful way (writing
-    #     as informative a string as possible). 
-
-    #     Example use:
-
-    #     .. code-block:: python
-
-    #         logger = EpochLogger(**logger_kwargs)
-    #         logger.save_config(locals())
-    #     """
-    #     config_json = convert_json(config)
-    #     if self.exp_name is not None:
-    #         config_json['exp_name'] = self.exp_name
-    #     if proc_id()==0:
-    #         output = json.dumps(config_json, separators=(',',':\t'), indent=4, sort_keys=True)
-    #         print(colorize('Saving config:\n', color='cyan', bold=True))
-    #         print(output)
-    #         with open(osp.join(self.output_dir, "config.json"), 'w') as out:
-    #             out.write(output)
-
-    def save_state(self, state_dict, itr=None):
-        """
-        Saves the state of an experiment.
-
-        To be clear: this is about saving *state*, not logging diagnostics.
-        All diagnostic logging is separate from this function. This function
-        will save whatever is in ``state_dict``---usually just a copy of the
-        environment---and the most recent parameters for the model you 
-        previously set up saving for with ``setup_tf_saver``. 
-
-        Call with any frequency you prefer. If you only want to maintain a
-        single state and overwrite it at each call with the most recent 
-        version, leave ``itr=None``. If you want to keep all of the states you
-        save, provide unique (increasing) values for 'itr'.
-
-        Args:
-            state_dict (dict): Dictionary containing essential elements to
-                describe the current state of training.
-
-            itr: An int, or None. Current iteration of training.
-        """
-        if proc_id()==0:
-            fname = 'vars.pkl' if itr is None else 'vars%d.pkl'%itr
-            try:
-                joblib.dump(state_dict, osp.join(self.output_dir, fname))
-            except:
-                self.log('Warning: could not pickle state_dict.', color='red')
-            if hasattr(self, 'tf_saver_elements'):
-                self._tf_simple_save(itr)
-
-    def setup_tf_saver(self, sess, inputs, outputs):
-        """
-        Set up easy model saving for tensorflow.
-
-        Call once, after defining your computation graph but before training.
-
-        Args:
-            sess: The Tensorflow session in which you train your computation
-                graph.
-
-            inputs (dict): A dictionary that maps from keys of your choice
-                to the tensorflow placeholders that serve as inputs to the 
-                computation graph. Make sure that *all* of the placeholders
-                needed for your outputs are included!
-
-            outputs (dict): A dictionary that maps from keys of your choice
-                to the outputs from your computation graph.
-        """
-        self.tf_saver_elements = dict(session=sess, inputs=inputs, outputs=outputs)
-        self.tf_saver_info = {'inputs': {k:v.name for k,v in inputs.items()},
-                              'outputs': {k:v.name for k,v in outputs.items()}}
-
-    def _tf_simple_save(self, itr=None):
-        """
-        Uses simple_save to save a trained model, plus info to make it easy
-        to associated tensors to variables after restore. 
-        """
-        if proc_id()==0:
-            assert hasattr(self, 'tf_saver_elements'), \
-                "First have to setup saving with self.setup_tf_saver"
-            fpath = 'simple_save' + ('%d'%itr if itr is not None else '')
-            fpath = osp.join(self.output_dir, fpath)
-            if osp.exists(fpath):
-                # simple_save refuses to be useful if fpath already exists,
-                # so just delete fpath if it's there.
-                shutil.rmtree(fpath)
-            tf.saved_model.simple_save(export_dir=fpath, **self.tf_saver_elements)
-            joblib.dump(self.tf_saver_info, osp.join(fpath, 'model_info.pkl'))
     
     def dump_tabular(self):
         """
@@ -231,25 +104,24 @@ class Logger:
 
         Writes both to stdout, and to the output file.
         """
-        if proc_id()==0:
-            vals = []
-            key_lens = [len(key) for key in self.log_headers]
-            max_key_len = max(15,max(key_lens))
-            keystr = '%'+'%d'%max_key_len
-            fmt = "| " + keystr + "s | %15s |"
-            n_slashes = 22 + max_key_len
-            print("-"*n_slashes)
-            for key in self.log_headers:
-                val = self.log_current_row.get(key, "")
-                valstr = "%8.3g"%val if hasattr(val, "__float__") else val
-                print(fmt%(key, valstr))
-                vals.append(val)
-            print("-"*n_slashes)
-            if self.output_file is not None:
-                if self.first_row:
-                    self.output_file.write("\t".join(self.log_headers)+"\n")
-                self.output_file.write("\t".join(map(str,vals))+"\n")
-                self.output_file.flush()
+        vals = []
+        key_lens = [len(key) for key in self.log_headers]
+        max_key_len = max(15,max(key_lens))
+        keystr = '%'+'%d'%max_key_len
+        fmt = "| " + keystr + "s | %15s |"
+        n_slashes = 22 + max_key_len
+        print("-"*n_slashes)
+        for key in self.log_headers:
+            val = self.log_current_row.get(key, "")
+            valstr = "%8.3g"%val if hasattr(val, "__float__") else val
+            print(fmt%(key, valstr))
+            vals.append(val)
+        print("-"*n_slashes)
+        if self.output_file is not None:
+            if self.first_row:
+                self.output_file.write("\t".join(self.log_headers)+"\n")
+            self.output_file.write("\t".join(map(str,vals))+"\n")
+            self.output_file.flush()
         self.log_current_row.clear()
         self.first_row=False
 
@@ -318,7 +190,7 @@ class EpochLogger(Logger):
         else:
             v = self.epoch_dict[key]
             vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
-            stats = mpi_statistics_scalar(vals, with_min_and_max=with_min_and_max)
+            stats = self.get_statistics_scalar(vals, with_min_and_max=with_min_and_max)
             super().log_tabular(key if average_only else 'Average' + key, stats[0])
             if not(average_only):
                 super().log_tabular('Std'+key, stats[1])
@@ -327,10 +199,14 @@ class EpochLogger(Logger):
                 super().log_tabular('Min'+key, stats[2])
         self.epoch_dict[key] = []
 
-    def get_stats(self, key):
-        """
-        Lets an algorithm ask the logger for mean/std/min/max of a diagnostic.
-        """
-        v = self.epoch_dict[key]
-        vals = np.concatenate(v) if isinstance(v[0], np.ndarray) and len(v[0].shape)>0 else v
-        return mpi_statistics_scalar(vals)
+    @staticmethod
+    def get_statistics_scalar(x, with_min_and_max=False):
+        x = np.array(x, dtype=np.float32)
+        mean = np.mean(x)
+        std = np.std(x)
+
+        if with_min_and_max:
+            x_min = np.min(x) if len(x) > 0 else np.inf
+            x_max = np.max(x) if len(x) > 0 else -np.inf
+            return mean, std, x_min, x_max
+        return mean, std
