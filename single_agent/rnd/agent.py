@@ -61,7 +61,7 @@ class Agent(object):
         actor_critic = ActorCriticModel(self.obs_ph, self.act_space)
         self.val, self.dist, self.old_dist = actor_critic.output()
 
-        rnd = RNDModel(self.obs_ph, 64)
+        rnd = RNDModel(self.obs_ph)
         self.target, self.predict = rnd.output()
     
     def select_action(self, obs):

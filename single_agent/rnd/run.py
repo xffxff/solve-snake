@@ -11,17 +11,21 @@ from buffer import Buffer
 from utils.logx import EpochLogger
 from utils.statistics_scalar import RunningMeanStd, RewardForwardFilter
 from utils.wrappers import LogWrapper
+from baselines.common.atari_wrappers import WarpFrame
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 
 
 def create_env(n_env, seed, test=False):
     def make_env(rank):
         def _thunk():
-            env = gym.make('MountainCar-v0')
+            env = gym.make('Snake-rgb-v0')
             env.seed(seed + rank)
             env = LogWrapper(env)
+            env = WarpFrame(env)
             return env
         return _thunk
     env = SubprocVecEnv([make_env(i) for i in range(n_env)])
+    env = VecFrameStack(env, 2)
     return env
 
 
