@@ -184,7 +184,7 @@ class Agent(object):
         self.ret_ph = tf.placeholder(tf.float32, shape=[None, ])    
 
     def _create_network(self):
-        obs_normal = tf.cast(self.obs_ph) / 255.0
+        obs_normal = tf.cast(self.obs_ph, dtype=tf.float32) / 255.0
         net = Net(obs_normal, self.act_space)
         self.val, self.dist, self.old_dist = net.output()
     
