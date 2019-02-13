@@ -13,9 +13,9 @@ class Agent(object):
                  act_space,
                  clip_ratio=0.2,
                  ent_coef=0.01,
-                 pi_lr=0.001,
-                 v_lr=0.001,
-                 rnd_lr=0.001):
+                 pi_lr=0.0001,
+                 v_lr=0.0001,
+                 rnd_lr=0.0001):
         self.obs_space = obs_space
         self.act_space = act_space
 
