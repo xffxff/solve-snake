@@ -123,7 +123,7 @@ class Runner(object):
             logger.store(ExtVLoss=ext_v_loss, IntVLoss=int_v_loss)
             # rnd_loss = self.agent.update_rnd_params(feed_dict)
             # logger.store(ExtVLoss=ext_v_loss, IntVLoss=int_v_loss, RNDLoss=rnd_loss)
-        for i in range(5):
+        # for i in range(5):
             rnd_loss = self.agent.update_rnd_params(feed_dict)
             logger.store(RNDLoss=rnd_loss)
         self.agent.sync_old_pi_params()
