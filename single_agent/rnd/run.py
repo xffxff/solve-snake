@@ -66,8 +66,6 @@ class Runner(object):
         self.act_space = self.env.action_space
 
         self.obs_rms = RunningMeanStd(shape=(84, 84, 1))
-        self.rew_rms = RunningMeanStd()
-        self.discount_rew = RewardForwardFilter(int_gamma)
         self.agent = Agent(self.obs_space, self.act_space)
         self.buffer = Buffer(gamma, lam)
 
@@ -75,38 +73,40 @@ class Runner(object):
         for step in range(self.train_epoch_len):
             acts = np.random.randint(0, self.act_space.n, self.n_env)
             next_obs, _, _, _ = self.env.step(acts)
-            self.obs_rms.update(next_obs[:, :, :, 1][:, :, :, None])
+            self.obs_rms.update(next_obs[:, :, :, -1][:, :, :, None])
         self.obs = self.env.reset()
     
     def _collect_rollouts(self, logger):
         for step in range(self.train_epoch_len):
             acts = self.agent.select_action(self.obs)
-            vals = self.agent.get_val(self.obs)
-            logger.store(Val=vals)
+            ext_vals, int_vals = self.agent.get_val(self.obs)
+            logger.store(ExtVal=ext_vals, IntVal=int_vals)
             next_obs, rews, dones, infos = self.env.step(acts)
-            next_state = next_obs[:, :, :, 1][:, :, :, None]
-            intrinsic_reward = self.agent.get_intrinsic_reward((next_state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var))
-            intrinsic_reward = np.clip(intrinsic_reward, -5, 5)
-            rews = rews + intrinsic_reward
-            self.buffer.store(self.obs, acts, rews, dones, vals)
-            self.obs_rms.update(next_state)
+            next_state = next_obs[:, :, :, -1][:, :, :, None]
+            intrinsic_reward = self.agent.get_intrinsic_reward(((next_state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5))
+            rews = np.clip(rews, 0, 1)
+            self.buffer.store(self.obs, acts, rews, dones, ext_vals, int_vals, intrinsic_reward)
+            # self.obs_rms.update(next_obs)
             self.obs = next_obs
             for info in infos:
                 if info.get('ep_r'):
                     logger.store(EpRet=info.get('ep_r'))
                     logger.store(EpLen=info.get('ep_len'))
-        last_val = self.agent.get_val(self.obs)
-        return last_val
+        last_ext_vals, last_int_vals = self.agent.get_val(self.obs)
+        return last_ext_vals, last_int_vals
 
     def _run_train_phase(self, logger):
         start_time = time.time()
-        last_val = self._collect_rollouts(logger)
-        obs_buf, state_buf, act_buf, ret_buf, adv_buf = self.buffer.get(last_val)
+        last_ext_vals, last_int_vals = self._collect_rollouts(logger)
+        obs_buf, act_buf, ext_ret_buf, int_ret_buf, adv_buf, state_buf = self.buffer.get(last_ext_vals, last_int_vals)
+        norm_state_buf = ((state_buf - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5)
+        self.obs_rms.update(state_buf)
         feed_dict = {
             self.agent.obs_ph: obs_buf,
-            self.agent.state_ph: state_buf,
+            self.agent.state_ph: norm_state_buf,
             self.agent.act_ph: act_buf,
-            self.agent.ret_ph: ret_buf,
+            self.agent.ext_ret_ph: ext_ret_buf,
+            self.agent.int_ret_ph: int_ret_buf,
             self.agent.adv_ph: adv_buf,
         }
 
@@ -119,9 +119,13 @@ class Runner(object):
             pi_loss = self.agent.update_pi_params(feed_dict)
             logger.store(PiLoss=pi_loss)
         for i in range(self.train_v_iters):
-            v_loss = self.agent.update_v_params(feed_dict)
+            ext_v_loss, int_v_loss = self.agent.update_v_params(feed_dict)
+            logger.store(ExtVLoss=ext_v_loss, IntVLoss=int_v_loss)
+            # rnd_loss = self.agent.update_rnd_params(feed_dict)
+            # logger.store(ExtVLoss=ext_v_loss, IntVLoss=int_v_loss, RNDLoss=rnd_loss)
+        for i in range(5):
             rnd_loss = self.agent.update_rnd_params(feed_dict)
-            logger.store(VLoss=v_loss, RNDLoss=rnd_loss)
+            logger.store(RNDLoss=rnd_loss)
         self.agent.sync_old_pi_params()
     
     def run_experiment(self):
@@ -134,11 +138,13 @@ class Runner(object):
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', with_min_and_max=True)
-            logger.log_tabular('Val', average_only=True)
+            logger.log_tabular('ExtVal', average_only=True)
+            logger.log_tabular('IntVal', average_only=True)
             logger.log_tabular('KL', average_only=True)
             logger.log_tabular('Entropy', average_only=True)
             logger.log_tabular('PiLoss', average_only=True)
-            logger.log_tabular('VLoss', average_only=True)
+            logger.log_tabular('ExtVLoss', average_only=True)
+            logger.log_tabular('IntVLoss', average_only=True)
             logger.log_tabular('RNDLoss', average_only=True)
             logger.log_tabular('TotalInteractions', epoch * self.train_epoch_len * self.n_env)
             logger.log_tabular('Time', time.time() - start_time)

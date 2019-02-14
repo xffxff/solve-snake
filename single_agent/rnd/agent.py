@@ -33,7 +33,9 @@ class Agent(object):
         ratio = self.pi / self.old_pi
         min_adv = tf.where(self.adv_ph > 0, (1 + clip_ratio) * self.adv_ph, (1 - clip_ratio) * self.adv_ph)
         self.pi_loss = - tf.reduce_mean(tf.minimum(ratio * self.adv_ph, min_adv)) - ent_coef * self.entropy
-        self.v_loss = tf.reduce_mean((self.ret_ph - self.val)**2)
+        self.ext_v_loss = tf.reduce_mean((self.ext_ret_ph - self.ext_val)**2)
+        self.int_v_loss = tf.reduce_mean((self.int_ret_ph - self.int_val)**2)
+        self.v_loss = self.ext_v_loss + self.int_v_loss
         self.rnd_loss = tf.reduce_mean((tf.stop_gradient(self.target) - self.predict)**2)
 
         self.train_pi = tf.train.AdamOptimizer(pi_lr).minimize(self.pi_loss)
@@ -56,11 +58,12 @@ class Agent(object):
         self.state_ph = tf.placeholder(tf.float32, shape=[None, 84, 84, 1])
         self.act_ph = tf.placeholder(tf.int32, shape=[None, ])
         self.adv_ph = tf.placeholder(tf.float32, shape=[None, ])
-        self.ret_ph = tf.placeholder(tf.float32, shape=[None, ])    
+        self.ext_ret_ph = tf.placeholder(tf.float32, shape=[None, ]) 
+        self.int_ret_ph = tf.placeholder(tf.float32, shape=[None, ])   
 
     def _create_network(self):
         actor_critic = ActorCriticModel(self.obs_ph, self.act_space)
-        self.val, self.dist, self.old_dist = actor_critic.output()
+        self.ext_val, self.int_val, self.dist, self.old_dist = actor_critic.output()
 
         rnd = RNDModel(self.state_ph)
         self.target, self.predict = rnd.output()
@@ -75,16 +78,16 @@ class Agent(object):
         return intrinsic_reward
 
     def get_val(self, obs):
-        val = self.sess.run(self.val, feed_dict={self.obs_ph: obs})
-        return val
+        ext_val, int_val = self.sess.run([self.ext_val, self.int_val], feed_dict={self.obs_ph: obs})
+        return ext_val, int_val
 
     def update_pi_params(self, feed_dict):
         _, pi_loss = self.sess.run([self.train_pi, self.pi_loss], feed_dict=feed_dict)
         return pi_loss
 
     def update_v_params(self, feed_dict):
-        _, v_loss = self.sess.run([self.train_v, self.v_loss], feed_dict=feed_dict)
-        return v_loss
+        _, ext_v_loss, int_v_loss = self.sess.run([self.train_v, self.ext_v_loss, self.int_v_loss], feed_dict=feed_dict)
+        return ext_v_loss, int_v_loss
     
     def update_rnd_params(self, feed_dict):
         _, rnd_loss = self.sess.run([self.train_rnd, self.rnd_loss], feed_dict=feed_dict)

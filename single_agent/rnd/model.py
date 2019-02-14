@@ -14,9 +14,12 @@ class ActorCriticModel(object):
             x = self._cnn(obs)
             logits = layers.dense(x, units=act_space.n)
             self.old_dist = Categorical(logits=logits)
-        with tf.variable_scope('v'):
-            x = self._cnn(obs)
-            self.val = tf.squeeze(layers.dense(x, units=1))
+
+        share = self._cnn(obs)
+        with tf.variable_scope('ext_v'):
+            self.ext_val = tf.squeeze(layers.dense(share, units=1))
+        with tf.variable_scope('int_v'):
+            self.int_val = tf.squeeze(layers.dense(share, units=1))
 
     def _cnn(self, x):
         x = layers.conv2d(x, filters=32, kernel_size=8, strides=(4, 4), activation=tf.nn.tanh)
@@ -26,7 +29,7 @@ class ActorCriticModel(object):
         return layers.dense(x, units=512, activation=tf.nn.tanh)
 
     def output(self):
-        return self.val, self.dist, self.old_dist
+        return self.ext_val, self.int_val, self.dist, self.old_dist
 
 
 class RNDModel(object):
