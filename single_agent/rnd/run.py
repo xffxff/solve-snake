@@ -188,7 +188,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from utils.run_utils  import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(args.exp_name, 'MountainCar-v0', args.seed)
+    logger_kwargs = setup_logger_kwargs(args.exp_name, 'Snake-rgb-v0', args.seed)
 
     runner = Runner(args.epochs ,args.n_env, args.seed, logger_kwargs=logger_kwargs)
     if args.test:

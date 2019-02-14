@@ -63,7 +63,7 @@ class Buffer(object):
         adv_buf = (adv_buf - np.mean(adv_buf)) / np.std(adv_buf)
 
         state_buf = obs_buf[:, :, :, -1][:, :, :, None]
-        return obs_buf, act_buf, ext_ret_buf, int_ret_buf, adv_buf
+        return obs_buf, act_buf, ext_ret_buf, int_ret_buf, adv_buf, state_buf
     
     def swap_and_flatten(self, arr):
         shape = arr.shape
