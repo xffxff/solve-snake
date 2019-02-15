@@ -70,7 +70,7 @@ class Runner(object):
         self.buffer = Buffer(gamma, lam)
 
     def _pre_normalize_obs(self):
-        for step in range(self.train_epoch_len):
+        for step in range(int(10000 * self.n_env)):
             acts = np.random.randint(0, self.act_space.n, self.n_env)
             next_obs, _, _, _ = self.env.step(acts)
             self.obs_rms.update(next_obs[:, :, :, -1][:, :, :, None])
