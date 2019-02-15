@@ -38,7 +38,7 @@ class Runner(object):
                  gamma=0.99,
                  int_gamma=0.99,
                  lam=0.95,
-                 train_epoch_len=500,
+                 train_epoch_len=128,
                  test_epoch_len=2000,
                  dtarg=0.01,
                  train_pi_iters=80,
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--seed', '-s', type=int, default=0)
-    parser.add_argument('--n_env', '-n', type=int, default=8)
+    parser.add_argument('--n_env', '-n', type=int, default=32)
     parser.add_argument('--exp_name', type=str, default='ppo')
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--model', type=int, default=None)
