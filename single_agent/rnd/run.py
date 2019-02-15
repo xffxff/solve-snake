@@ -77,6 +77,7 @@ class Runner(object):
         self.obs = self.env.reset()
     
     def _collect_rollouts(self, logger):
+        episode = 0
         for step in range(self.train_epoch_len):
             acts = self.agent.select_action(self.obs)
             ext_vals, int_vals = self.agent.get_val(self.obs)
@@ -84,14 +85,16 @@ class Runner(object):
             next_obs, rews, dones, infos = self.env.step(acts)
             next_state = next_obs[:, :, :, -1][:, :, :, None]
             intrinsic_reward = self.agent.get_intrinsic_reward(((next_state - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5))
-            rews = np.clip(rews, 0, 1)
             self.buffer.store(self.obs, acts, rews, dones, ext_vals, int_vals, intrinsic_reward)
             # self.obs_rms.update(next_obs)
             self.obs = next_obs
             for info in infos:
                 if info.get('ep_r'):
+                    episode = 1
                     logger.store(EpRet=info.get('ep_r'))
                     logger.store(EpLen=info.get('ep_len'))
+        if not episode:
+            logger.store(EpRet=0, EpLen=0)
         last_ext_vals, last_int_vals = self.agent.get_val(self.obs)
         return last_ext_vals, last_int_vals
 
@@ -101,6 +104,7 @@ class Runner(object):
         obs_buf, act_buf, ext_ret_buf, int_ret_buf, adv_buf, state_buf = self.buffer.get(last_ext_vals, last_int_vals)
         norm_state_buf = ((state_buf - self.obs_rms.mean) / np.sqrt(self.obs_rms.var)).clip(-5, 5)
         self.obs_rms.update(state_buf)
+        obs_buf /= 255.
         feed_dict = {
             self.agent.obs_ph: obs_buf,
             self.agent.state_ph: norm_state_buf,

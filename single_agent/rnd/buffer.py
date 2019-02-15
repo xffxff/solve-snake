@@ -45,13 +45,21 @@ class Buffer(object):
         ext_last_gae_lam, ext_last_ret = 0, last_ext_val
         int_last_gae_lam, int_last_ret = 0, last_int_val
         for i in reversed(range(len(self.ext_rew_buf))):
-            ext_delta = ext_rew_buf[i] + self.gamma * ext_val_buf[i+1] * (1 - done_buf[i]) - ext_val_buf[i]
-            ext_adv_buf[i] = ext_last_gae_lam = ext_delta + self.gamma * self.lam * (1 - done_buf[i]) * ext_last_gae_lam
-            ext_ret_buf[i] = ext_last_ret =  ext_rew_buf[i] + self.gamma * ext_last_ret * (1 - done_buf[i])
+            # ext_delta = ext_rew_buf[i] + self.gamma * ext_val_buf[i+1] * (1 - done_buf[i]) - ext_val_buf[i]
+            # ext_adv_buf[i] = ext_last_gae_lam = ext_delta + self.gamma * self.lam * (1 - done_buf[i]) * ext_last_gae_lam
+            # ext_ret_buf[i] = ext_last_ret =  ext_rew_buf[i] + self.gamma * ext_last_ret * (1 - done_buf[i])
 
-            int_delta = int_rew_buf[i] + self.gamma * int_val_buf[i+1] * (1 - done_buf[i]) - int_val_buf[i]
-            int_adv_buf[i] = int_last_gae_lam = int_delta + self.gamma * self.lam * (1 - done_buf[i]) * int_last_gae_lam
-            int_ret_buf[i] = int_last_ret =  int_rew_buf[i] + self.gamma * int_last_ret * (1 - done_buf[i])
+            # int_delta = int_rew_buf[i] + self.gamma * int_val_buf[i+1] * (1 - done_buf[i]) - int_val_buf[i]
+            # int_adv_buf[i] = int_last_gae_lam = int_delta + self.gamma * self.lam * (1 - done_buf[i]) * int_last_gae_lam
+            # int_ret_buf[i] = int_last_ret =  int_rew_buf[i] + self.gamma * int_last_ret * (1 - done_buf[i])
+
+            ext_delta = ext_rew_buf[i] + self.gamma * ext_val_buf[i+1] - ext_val_buf[i]
+            ext_adv_buf[i] = ext_last_gae_lam = ext_delta + self.gamma * self.lam * ext_last_gae_lam
+            ext_ret_buf[i] = ext_last_ret =  ext_rew_buf[i] + self.gamma * ext_last_ret
+
+            int_delta = int_rew_buf[i] + self.gamma * int_val_buf[i+1] - int_val_buf[i]
+            int_adv_buf[i] = int_last_gae_lam = int_delta + self.gamma * self.lam * int_last_gae_lam
+            int_ret_buf[i] = int_last_ret =  int_rew_buf[i] + self.gamma * int_last_ret
 
         obs_buf, act_buf, ext_ret_buf, ext_adv_buf, int_ret_buf, int_adv_buf \
                 = map(self.swap_and_flatten, (obs_buf, act_buf, ext_ret_buf, ext_adv_buf, int_ret_buf, int_adv_buf))
